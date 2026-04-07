@@ -12,9 +12,7 @@ import ru.copperside.sal.api.command.CommandResult;
 import ru.copperside.sal.api.command.FailedResult;
 import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
-import ru.copperside.sal.starter.context.CommandContextHolder;
-import ru.copperside.sal.starter.context.SalMdc;
-import ru.copperside.sal.starter.context.SessionHolder;
+import ru.copperside.sal.starter.context.SalContext;
 import ru.copperside.sal.starter.rabbitmq.SalMessageConverter;
 import ru.copperside.sal.starter.rabbitmq.SalRabbitConstants;
 import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
@@ -66,8 +64,8 @@ public class CommandConsumer implements MessageListener {
         }
 
         restoreSession(rm);
-        SalMdc.set(rm.getCorrelationId(), null, null);
-        CommandContextHolder.set(buildCommandContext(rm, commandTypeName));
+        SalContext.setMdc(rm.getCorrelationId(), null, null);
+        SalContext.setCommandContext(buildCommandContext(rm, commandTypeName));
 
         try {
             Object handler = handlerRegistry.resolveHandler(commandTypeName);
@@ -86,15 +84,15 @@ public class CommandConsumer implements MessageListener {
                 // Capture context before async execution — ThreadLocals will be
                 // cleared in the finally block of the calling thread, so the
                 // whenComplete callback running in another thread would see nulls.
-                Map<String, Object> capturedSession = SessionHolder.get();
+                Map<String, Object> capturedSession = SalContext.session();
                 String capturedCorrelationId = rm.getCorrelationId();
 
                 resultFuture = asyncHandler.executeAsync((Command) payload);
 
                 resultFuture.whenComplete((result, ex) -> {
                     // Restore context in the callback thread
-                    if (capturedSession != null) SessionHolder.set(capturedSession);
-                    SalMdc.set(capturedCorrelationId, null, null);
+                    if (capturedSession != null) SalContext.setSession(capturedSession);
+                    SalContext.setMdc(capturedCorrelationId, null, null);
                     try {
                         if (ex != null) {
                             log.error("[BUS] '{}' failed correlationId={}",
@@ -105,8 +103,7 @@ public class CommandConsumer implements MessageListener {
                         }
                         // null result → fire-and-forget, no reply needed
                     } finally {
-                        SessionHolder.clear();
-                        SalMdc.clear();
+                        SalContext.clear();
                     }
                 });
             } else if (handler instanceof CommandHandler syncHandler) {
@@ -126,9 +123,7 @@ public class CommandConsumer implements MessageListener {
                     commandTypeName, rm.getCorrelationId(), e);
             sendFailedResult(rm, e.getMessage());
         } finally {
-            CommandContextHolder.clear();
-            SessionHolder.clear();
-            SalMdc.clear();
+            SalContext.clear();
         }
     }
 
@@ -174,7 +169,7 @@ public class CommandConsumer implements MessageListener {
         if (sessionData != null && !sessionData.isBlank()) {
             try {
                 Map<String, Object> session = sessionSerializer.deserialize(sessionData);
-                SessionHolder.set(session);
+                SalContext.setSession(session);
             } catch (IOException e) {
                 log.warn("[BUS] Failed to deserialize session", e);
             }

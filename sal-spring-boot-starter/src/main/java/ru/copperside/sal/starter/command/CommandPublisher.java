@@ -7,7 +7,7 @@ import ru.copperside.sal.api.command.CommandPriority;
 import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.SalProperties;
-import ru.copperside.sal.starter.context.SessionHolder;
+import ru.copperside.sal.starter.context.SalContext;
 import ru.copperside.sal.starter.rabbitmq.SalRabbitConstants;
 import ru.copperside.sal.starter.session.SessionSerializer;
 
@@ -108,7 +108,7 @@ public class CommandPublisher {
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put(MessageDataKeys.IS_COMMAND, "");
 
-        Map<String, Object> session = SessionHolder.get();
+        Map<String, Object> session = SalContext.session();
         if (session != null) {
             try {
                 additionalData.put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
@@ -127,7 +127,7 @@ public class CommandPublisher {
         if (rm.getMessageId() == 0) rm.setMessageId(messageIdCounter.incrementAndGet());
         if (rm.getAdditionalData() == null) rm.setAdditionalData(new HashMap<>());
 
-        Map<String, Object> session = SessionHolder.get();
+        Map<String, Object> session = SalContext.session();
         if (session != null && !rm.getAdditionalData().containsKey(MessageDataKeys.SESSION)) {
             try {
                 rm.getAdditionalData().put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));

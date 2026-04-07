@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 import ru.copperside.sal.api.constant.Headers;
-import ru.copperside.sal.starter.context.SessionHolder;
+import ru.copperside.sal.starter.context.SalContext;
 import ru.copperside.sal.starter.session.SessionSerializer;
 
 import java.io.ByteArrayInputStream;
@@ -77,7 +77,7 @@ public class SessionFilter extends OncePerRequestFilter {
             try {
                 String sessionStr = new String(fullBody, offset, length, StandardCharsets.UTF_8);
                 Map<String, Object> session = sessionSerializer.deserialize(sessionStr);
-                SessionHolder.set(session);
+                SalContext.setSession(session);
             } catch (Exception e) {
                 log.warn("Failed to deserialize session: {}", e.getMessage());
             }
@@ -94,14 +94,14 @@ public class SessionFilter extends OncePerRequestFilter {
             filterChain.doFilter(wrappedRequest, wrappedResponse);
         } finally {
             appendSessionToResponse(wrappedResponse, response);
-            SessionHolder.clear();
+            SalContext.clear();
         }
     }
 
     private void appendSessionToResponse(ContentCachingResponseWrapper wrappedResponse,
                                          HttpServletResponse response) throws IOException {
         byte[] responseBody = wrappedResponse.getContentAsByteArray();
-        Map<String, Object> session = SessionHolder.get();
+        Map<String, Object> session = SalContext.session();
 
         if (session != null && !session.isEmpty()) {
             String sessionStr;

@@ -3,9 +3,7 @@ package ru.copperside.sal.starter.command;
 import org.junit.jupiter.api.Test;
 import ru.copperside.sal.api.command.CommandPriority;
 import ru.copperside.sal.api.exception.SalErrorCodes;
-import ru.copperside.sal.starter.context.CommandContextHolder;
-import ru.copperside.sal.starter.context.SalMdc;
-import ru.copperside.sal.starter.context.SessionHolder;
+import ru.copperside.sal.starter.context.SalContext;
 
 import java.time.Instant;
 import java.util.Map;
@@ -70,34 +68,34 @@ class DefaultCommandBusTest {
     }
 
     @Test
-    void sessionHolder_shouldBeThreadLocal() {
-        SessionHolder.set(Map.of("SessionId", "test-123", "OperationId", 42));
-        assertThat(SessionHolder.getSessionId()).isEqualTo("test-123");
-        assertThat(SessionHolder.getOperationId()).isEqualTo("42");
+    void salContext_session_shouldBeThreadLocal() {
+        SalContext.setSession(Map.of("SessionId", "test-123", "OperationId", 42));
+        assertThat(SalContext.sessionId()).isEqualTo("test-123");
+        assertThat(SalContext.operationId()).isEqualTo("42");
 
-        SessionHolder.clear();
-        assertThat(SessionHolder.get()).isNull();
+        SalContext.clear();
+        assertThat(SalContext.session()).isNull();
     }
 
     @Test
-    void commandContextHolder_shouldBeThreadLocal() {
+    void salContext_commandContext_shouldBeThreadLocal() {
         var ctx = new ru.copperside.sal.api.command.CommandContext();
         ctx.setCorrelationId("test-cid");
-        CommandContextHolder.set(ctx);
+        SalContext.setCommandContext(ctx);
 
-        assertThat(CommandContextHolder.get().getCorrelationId()).isEqualTo("test-cid");
+        assertThat(SalContext.commandContext().getCorrelationId()).isEqualTo("test-cid");
 
-        CommandContextHolder.clear();
-        assertThat(CommandContextHolder.get()).isNull();
+        SalContext.clear();
+        assertThat(SalContext.commandContext()).isNull();
     }
 
     @Test
-    void salMdc_shouldSetAndClear() {
-        SalMdc.set("cid-1", "sid-1", "adapter-1");
+    void salContext_mdc_shouldSetAndClear() {
+        SalContext.setMdc("cid-1", "sid-1", "adapter-1");
         assertThat(org.slf4j.MDC.get("correlationId")).isEqualTo("cid-1");
         assertThat(org.slf4j.MDC.get("sessionId")).isEqualTo("sid-1");
 
-        SalMdc.clear();
+        SalContext.clear();
         assertThat(org.slf4j.MDC.get("correlationId")).isNull();
     }
 
