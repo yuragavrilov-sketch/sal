@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
 
 /**
  * Thread-safe registry of known endpoints.
@@ -21,6 +22,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class EndPointRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(EndPointRegistry.class);
+    private static final Pattern IP_PATTERN = Pattern.compile("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$");
 
     private final ConcurrentHashMap<String, EndPointInfo> endPoints = new ConcurrentHashMap<>();
     private final AtomicLong idSequence = new AtomicLong(0);
@@ -94,7 +96,7 @@ public class EndPointRegistry {
     private String resolveHostIp(URI uri) {
         if (uri == null) return "unknown";
         String host = uri.getHost();
-        if (host.matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$")) {
+        if (IP_PATTERN.matcher(host).matches()) {
             return "HOST-" + host.replace(".", "-");
         }
         try {

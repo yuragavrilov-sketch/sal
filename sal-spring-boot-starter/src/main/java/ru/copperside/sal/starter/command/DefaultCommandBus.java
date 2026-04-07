@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import ru.copperside.sal.api.command.*;
 import ru.copperside.sal.api.exception.ErrorException;
 import ru.copperside.sal.api.exception.SalErrorCodes;
+import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 
@@ -96,7 +97,7 @@ public class DefaultCommandBus implements CommandBus {
         rm.setPriority((byte) priority.getValue());
         rm.setPayload(command);
         rm.setExpireDate(expireDate);
-        rm.getAdditionalData().put("Confirmtation", "true"); // C# typo preserved
+        rm.getAdditionalData().put(MessageDataKeys.CONFIRMATION, "true");
 
         publisher.publish(rm, commandTypeName);
 

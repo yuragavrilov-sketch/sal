@@ -35,12 +35,4 @@ public interface CommandBus {
         return executeCommandAsync(command, 120, CommandPriority.Normal);
     }
 
-    /** Request/reply with confirmation flow. */
-    <R extends CommandResult> CompletableFuture<ConfirmationResult> confirmatoryCommandAsync(
-            HaveResult<R> command, int timeoutSeconds, CommandPriority priority);
-
-    default <R extends CommandResult> CompletableFuture<ConfirmationResult> confirmatoryCommandAsync(
-            HaveResult<R> command) {
-        return confirmatoryCommandAsync(command, 120, CommandPriority.Normal);
-    }
 }

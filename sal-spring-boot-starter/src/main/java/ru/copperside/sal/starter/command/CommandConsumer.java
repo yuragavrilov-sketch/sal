@@ -10,12 +10,14 @@ import ru.copperside.sal.api.command.CommandHandler;
 import ru.copperside.sal.api.command.CommandHandlerAsync;
 import ru.copperside.sal.api.command.CommandResult;
 import ru.copperside.sal.api.command.FailedResult;
+import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.context.CommandContextHolder;
 import ru.copperside.sal.starter.context.SalMdc;
 import ru.copperside.sal.starter.context.SessionHolder;
 import ru.copperside.sal.starter.rabbitmq.SalMessageConverter;
 import ru.copperside.sal.starter.rabbitmq.SalRabbitConstants;
+import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 import ru.copperside.sal.starter.session.SessionSerializer;
 
 import java.io.IOException;
@@ -55,7 +57,7 @@ public class CommandConsumer implements MessageListener {
     @SuppressWarnings("unchecked")
     public void onMessage(Message message) {
         RecordedMessage rm = (RecordedMessage) messageConverter.fromMessage(message);
-        String commandTypeName = normalizeTypeName(rm.getPayloadType());
+        String commandTypeName = TypeMappingRegistry.stripAssemblyName(rm.getPayloadType());
 
         if (rm.getExpireDate() != null && rm.getExpireDate().isBefore(Instant.now())) {
             log.warn("[BUS] Command {} expired (correlationId={}), skipping",
@@ -168,7 +170,7 @@ public class CommandConsumer implements MessageListener {
 
     private void restoreSession(RecordedMessage rm) {
         if (rm.getAdditionalData() == null) return;
-        String sessionData = rm.getAdditionalData().get("Session");
+        String sessionData = rm.getAdditionalData().get(MessageDataKeys.SESSION);
         if (sessionData != null && !sessionData.isBlank()) {
             try {
                 Map<String, Object> session = sessionSerializer.deserialize(sessionData);
@@ -189,9 +191,4 @@ public class CommandConsumer implements MessageListener {
         return ctx;
     }
 
-    private static String normalizeTypeName(String payloadType) {
-        if (payloadType == null) return null;
-        int comma = payloadType.indexOf(',');
-        return comma >= 0 ? payloadType.substring(0, comma).trim() : payloadType;
-    }
 }

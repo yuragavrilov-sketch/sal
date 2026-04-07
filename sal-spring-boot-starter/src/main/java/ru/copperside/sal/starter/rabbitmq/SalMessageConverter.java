@@ -5,6 +5,7 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.amqp.support.converter.MessageConverter;
+import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 
@@ -78,12 +79,12 @@ public class SalMessageConverter implements MessageConverter {
             if (rm.getAdditionalData() != null && !rm.getAdditionalData().isEmpty()) {
                 Map<String, String> additionalData = new HashMap<>(rm.getAdditionalData());
                 if (rm.getSourceServiceId() != null) {
-                    additionalData.put("SourceServiceId", rm.getSourceServiceId());
+                    additionalData.put(MessageDataKeys.SOURCE_SERVICE_ID, rm.getSourceServiceId());
                 }
                 byte[] additionalDataBytes = wireObjectMapper.writeValueAsBytes(additionalData);
                 messageProperties.setHeader(ADDITIONAL_DATA_HEADER, additionalDataBytes);
             } else if (rm.getSourceServiceId() != null) {
-                Map<String, String> additionalData = Map.of("SourceServiceId", rm.getSourceServiceId());
+                Map<String, String> additionalData = Map.of(MessageDataKeys.SOURCE_SERVICE_ID, rm.getSourceServiceId());
                 byte[] additionalDataBytes = wireObjectMapper.writeValueAsBytes(additionalData);
                 messageProperties.setHeader(ADDITIONAL_DATA_HEADER, additionalDataBytes);
             }
@@ -110,10 +111,7 @@ public class SalMessageConverter implements MessageConverter {
 
             // Deserialize payload
             if (payloadTypeName != null) {
-                // Strip assembly name if present: "Namespace.Class, Assembly" → "Namespace.Class"
-                String typeName = payloadTypeName.contains(",")
-                        ? payloadTypeName.substring(0, payloadTypeName.indexOf(',')).trim()
-                        : payloadTypeName;
+                String typeName = TypeMappingRegistry.stripAssemblyName(payloadTypeName);
 
                 Class<?> payloadClass = typeMappingRegistry.resolveJavaClass(typeName)
                         .or(() -> typeMappingRegistry.resolveJavaClass(payloadTypeName))
@@ -162,7 +160,7 @@ public class SalMessageConverter implements MessageConverter {
                 @SuppressWarnings("unchecked")
                 Map<String, String> additionalData = wireObjectMapper.readValue(additionalDataBytes, Map.class);
                 rm.setAdditionalData(additionalData);
-                String sourceServiceId = additionalData.get("SourceServiceId");
+                String sourceServiceId = additionalData.get(MessageDataKeys.SOURCE_SERVICE_ID);
                 if (sourceServiceId != null) {
                     rm.setSourceServiceId(sourceServiceId);
                 }

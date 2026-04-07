@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import ru.copperside.sal.api.command.CommandPriority;
+import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.SalProperties;
 import ru.copperside.sal.starter.context.SessionHolder;
@@ -29,7 +30,7 @@ public class CommandPublisher {
 
     private final RabbitTemplate salRabbitTemplate;
     private final SessionSerializer sessionSerializer;
-    private final SalProperties properties;
+    private final String adapterFullName;
     private final AtomicLong messageIdCounter = new AtomicLong(0);
 
     public CommandPublisher(RabbitTemplate salRabbitTemplate,
@@ -37,7 +38,7 @@ public class CommandPublisher {
                             SalProperties properties) {
         this.salRabbitTemplate = salRabbitTemplate;
         this.sessionSerializer = sessionSerializer;
-        this.properties = properties;
+        this.adapterFullName = properties.getAdapter().getType() + "." + properties.getAdapter().getName();
     }
 
     /**
@@ -68,7 +69,7 @@ public class CommandPublisher {
      */
     public void publish(RecordedMessage rm, String commandName) {
         enrichMessage(rm);
-        rm.getAdditionalData().put("IsCommand", "");
+        rm.getAdditionalData().put(MessageDataKeys.IS_COMMAND, "");
         rm.setExchangeName(SalRabbitConstants.COMMAND_EXCHANGE);
         rm.setRoutingKey(commandName);
         if (rm.getPayloadType() == null) rm.setPayloadType(commandName);
@@ -100,18 +101,17 @@ public class CommandPublisher {
         rm.setRoutingKey(commandTypeName);
         rm.setExchangeName(SalRabbitConstants.COMMAND_EXCHANGE);
         rm.setTimeStamp(Instant.now());
-        rm.setSourceServiceId(adapterFullName());
+        rm.setSourceServiceId(adapterFullName);
         rm.setMessageId(messageIdCounter.incrementAndGet());
         rm.setExpireDate(expireDate);
 
         Map<String, String> additionalData = new HashMap<>();
-        additionalData.put("IsCommand", "");
+        additionalData.put(MessageDataKeys.IS_COMMAND, "");
 
-        // Session compression into AdditionalData
         Map<String, Object> session = SessionHolder.get();
         if (session != null) {
             try {
-                additionalData.put("Session", sessionSerializer.serialize(session));
+                additionalData.put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
             } catch (IOException e) {
                 log.warn("Failed to serialize session for command {}", commandTypeName, e);
             }
@@ -123,21 +123,18 @@ public class CommandPublisher {
 
     private void enrichMessage(RecordedMessage rm) {
         if (rm.getTimeStamp() == null) rm.setTimeStamp(Instant.now());
-        if (rm.getSourceServiceId() == null) rm.setSourceServiceId(adapterFullName());
+        if (rm.getSourceServiceId() == null) rm.setSourceServiceId(adapterFullName);
         if (rm.getMessageId() == 0) rm.setMessageId(messageIdCounter.incrementAndGet());
         if (rm.getAdditionalData() == null) rm.setAdditionalData(new HashMap<>());
 
         Map<String, Object> session = SessionHolder.get();
-        if (session != null && !rm.getAdditionalData().containsKey("Session")) {
+        if (session != null && !rm.getAdditionalData().containsKey(MessageDataKeys.SESSION)) {
             try {
-                rm.getAdditionalData().put("Session", sessionSerializer.serialize(session));
+                rm.getAdditionalData().put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
             } catch (IOException e) {
                 log.warn("Failed to serialize session", e);
             }
         }
     }
 
-    private String adapterFullName() {
-        return properties.getAdapter().getType() + "." + properties.getAdapter().getName();
-    }
 }

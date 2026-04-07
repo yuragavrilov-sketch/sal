@@ -54,4 +54,14 @@ public class TypeMappingRegistry {
     public int size() {
         return csharpToJava.size();
     }
+
+    /**
+     * Strip C# assembly qualifier from a type name.
+     * "Namespace.Class, Assembly" → "Namespace.Class"
+     */
+    public static String stripAssemblyName(String typeName) {
+        if (typeName == null) return null;
+        int comma = typeName.indexOf(',');
+        return comma >= 0 ? typeName.substring(0, comma).trim() : typeName;
+    }
 }

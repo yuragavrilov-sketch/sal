@@ -22,7 +22,6 @@
     <modules>
         <module>sal-api</module>
         <module>sal-spring-boot-starter</module>
-        <module>sal-test</module>
         <module>sal-example-adapter</module>
     </modules>
 

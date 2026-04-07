@@ -6,6 +6,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import ru.copperside.sal.api.annotation.ServiceMessage;
 import ru.copperside.sal.api.event.Event;
 import ru.copperside.sal.api.event.EventBus;
+import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.SalProperties;
 import ru.copperside.sal.starter.context.SessionHolder;
@@ -34,7 +35,7 @@ public class DefaultEventBus implements EventBus {
     private final RabbitTemplate salRabbitTemplate;
     private final SessionSerializer sessionSerializer;
     private final TypeMappingRegistry typeMappingRegistry;
-    private final SalProperties properties;
+    private final String adapterFullName;
     private final AtomicLong messageIdCounter = new AtomicLong(0);
 
     public DefaultEventBus(RabbitTemplate salRabbitTemplate,
@@ -44,7 +45,7 @@ public class DefaultEventBus implements EventBus {
         this.salRabbitTemplate = salRabbitTemplate;
         this.sessionSerializer = sessionSerializer;
         this.typeMappingRegistry = typeMappingRegistry;
-        this.properties = properties;
+        this.adapterFullName = properties.getAdapter().getType() + "." + properties.getAdapter().getName();
     }
 
     @Override
@@ -91,23 +92,21 @@ public class DefaultEventBus implements EventBus {
         rm.setMessageId(messageIdCounter.incrementAndGet());
         rm.setCorrelationId(UUID.randomUUID().toString());
         rm.setTimeStamp(Instant.now());
-        rm.setSourceServiceId(adapterFullName());
+        rm.setSourceServiceId(adapterFullName);
 
-        // ServiceMessage → routingKey = "service"
         if (event.getClass().isAnnotationPresent(ServiceMessage.class)) {
-            rm.setRoutingKey("service");
+            rm.setRoutingKey(MessageDataKeys.SERVICE_ROUTING_KEY);
         }
 
-        // Session injection
         Map<String, String> additionalData = new HashMap<>();
         Map<String, Object> session = SessionHolder.get();
         if (session != null) {
             try {
                 String sessionId = SessionHolder.getSessionId();
                 String operationId = SessionHolder.getOperationId();
-                if (sessionId != null) additionalData.put("SessionId", sessionId);
-                if (operationId != null) additionalData.put("OperationId", operationId);
-                additionalData.put("Session", sessionSerializer.serialize(session));
+                if (sessionId != null) additionalData.put(MessageDataKeys.SESSION_ID, sessionId);
+                if (operationId != null) additionalData.put(MessageDataKeys.OPERATION_ID, operationId);
+                additionalData.put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
             } catch (IOException e) {
                 log.warn("Failed to serialize session for event {}", event.getClass().getSimpleName(), e);
             }
@@ -121,20 +120,17 @@ public class DefaultEventBus implements EventBus {
         if (rm.getMessageId() == 0) rm.setMessageId(messageIdCounter.incrementAndGet());
         if (rm.getCorrelationId() == null) rm.setCorrelationId(UUID.randomUUID().toString());
         if (rm.getTimeStamp() == null) rm.setTimeStamp(Instant.now());
-        if (rm.getSourceServiceId() == null) rm.setSourceServiceId(adapterFullName());
+        if (rm.getSourceServiceId() == null) rm.setSourceServiceId(adapterFullName);
         if (rm.getAdditionalData() == null) rm.setAdditionalData(new HashMap<>());
 
         Map<String, Object> session = SessionHolder.get();
-        if (session != null && !rm.getAdditionalData().containsKey("Session")) {
+        if (session != null && !rm.getAdditionalData().containsKey(MessageDataKeys.SESSION)) {
             try {
-                rm.getAdditionalData().put("Session", sessionSerializer.serialize(session));
+                rm.getAdditionalData().put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
             } catch (IOException e) {
                 log.warn("Failed to serialize session", e);
             }
         }
     }
 
-    private String adapterFullName() {
-        return properties.getAdapter().getType() + "." + properties.getAdapter().getName();
-    }
 }

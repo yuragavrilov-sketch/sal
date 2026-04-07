@@ -47,12 +47,7 @@ public class SalExceptionHandler {
         dto.setAdapterName(properties.getAdapter().getName());
         dto.setSourceType(ExceptionSourceType.UNKNOWN);
         dto.setTimeStamp(Instant.now());
-        if (ex.getCause() != null) {
-            InfrastructureExceptionDTO inner = new InfrastructureExceptionDTO();
-            inner.setMessage(ex.getCause().getMessage());
-            inner.setExceptionType(ex.getCause().getClass().getSimpleName());
-            dto.setInnerException(inner);
-        }
+        setInnerException(dto, ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(dto);
     }
 
@@ -69,12 +64,16 @@ public class SalExceptionHandler {
         dto.setSessionId(ex.getSessionId());
         dto.setTimeStamp(ex.getTimeStamp() != null ? ex.getTimeStamp() : Instant.now());
         dto.setProperties(ex.getProperties());
+        setInnerException(dto, ex);
+        return dto;
+    }
+
+    private void setInnerException(InfrastructureExceptionDTO dto, Throwable ex) {
         if (ex.getCause() != null) {
             InfrastructureExceptionDTO inner = new InfrastructureExceptionDTO();
             inner.setMessage(ex.getCause().getMessage());
             inner.setExceptionType(ex.getCause().getClass().getSimpleName());
             dto.setInnerException(inner);
         }
-        return dto;
     }
 }

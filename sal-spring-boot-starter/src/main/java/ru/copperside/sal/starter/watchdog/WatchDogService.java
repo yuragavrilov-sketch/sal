@@ -84,20 +84,20 @@ public class WatchDogService {
     private void publishOnlineEvent() {
         AdapterOnlineEvent event = new AdapterOnlineEvent();
         event.setAdapterName(properties.getAdapter().getName());
-        try {
-            eventPublisher.publishEvent(event);
-        } catch (Exception e) {
-            log.warn("Failed to publish AdapterOnlineEvent: {}", e.getMessage());
-        }
+        safePublish(event);
     }
 
     private void publishOfflineEvent() {
         AdapterOfflineEvent event = new AdapterOfflineEvent();
         event.setAdapterName(properties.getAdapter().getName());
+        safePublish(event);
+    }
+
+    private void safePublish(Object event) {
         try {
             eventPublisher.publishEvent(event);
         } catch (Exception e) {
-            log.warn("Failed to publish AdapterOfflineEvent: {}", e.getMessage());
+            log.warn("Failed to publish {}: {}", event.getClass().getSimpleName(), e.getMessage());
         }
     }
 }
