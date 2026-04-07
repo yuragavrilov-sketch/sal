@@ -3,8 +3,6 @@ package ru.copperside.sal.starter.command;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.copperside.sal.api.command.*;
-import ru.copperside.sal.api.exception.ErrorException;
-import ru.copperside.sal.api.exception.SalErrorCodes;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 

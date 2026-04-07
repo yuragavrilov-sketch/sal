@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import ru.copperside.sal.api.exception.ExceptionSourceType;
 import ru.copperside.sal.api.exception.InfrastructureExceptionDTO;
-import ru.copperside.sal.api.exception.SalBaseException;
+import ru.copperside.sal.api.exception.SalException;
 import ru.copperside.sal.api.exception.SalErrorCodes;
 import ru.copperside.sal.starter.SalProperties;
 
@@ -30,8 +30,8 @@ public class SalExceptionHandler {
         this.properties = properties;
     }
 
-    @ExceptionHandler(SalBaseException.class)
-    public ResponseEntity<InfrastructureExceptionDTO> handleSalException(SalBaseException ex) {
+    @ExceptionHandler(SalException.class)
+    public ResponseEntity<InfrastructureExceptionDTO> handleSalException(SalException ex) {
         log.warn("SAL exception [{}]: {}", ex.getCode(), ex.getMessage());
         InfrastructureExceptionDTO dto = toDto(ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(dto);
@@ -51,9 +51,9 @@ public class SalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(dto);
     }
 
-    private InfrastructureExceptionDTO toDto(SalBaseException ex) {
+    private InfrastructureExceptionDTO toDto(SalException ex) {
         InfrastructureExceptionDTO dto = new InfrastructureExceptionDTO();
-        dto.setExceptionType(ex.getClass().getSimpleName());
+        dto.setExceptionType(ex.getExceptionTypeName());
         dto.setCode(ex.getCode());
         dto.setCodeDescription(ex.getCodeDescription());
         dto.setMessage(ex.getMessage());

@@ -2,13 +2,11 @@ package ru.copperside.sal.api.exception;
 
 import java.time.Instant;
 
-/**
- * Base exception for all SAL exceptions.
- * <p>
- * C# origin: {@code TCB.SAL.Client.Exceptions.SalBaseException}
- */
-public abstract class SalBaseException extends RuntimeException {
+public class SalException extends RuntimeException {
 
+    public enum Type { ERROR, FATAL, VALIDATION }
+
+    private final Type type;
     private String code;
     private String codeDescription;
     private String adapterName;
@@ -19,14 +17,19 @@ public abstract class SalBaseException extends RuntimeException {
     private Instant timeStamp;
     private Object properties;
 
-    protected SalBaseException() { super(); }
+    private SalException(Type type, String message) {
+        super(message);
+        this.type = type;
+    }
 
-    protected SalBaseException(String message) { super(message); }
+    private SalException(Type type, String message, Throwable cause) {
+        super(message, cause);
+        this.type = type;
+    }
 
-    protected SalBaseException(String message, Throwable cause) { super(message, cause); }
-
-    protected SalBaseException(InfrastructureExceptionDTO data) {
+    private SalException(Type type, InfrastructureExceptionDTO data) {
         super(data.getMessage());
+        this.type = type;
         this.code = data.getCode();
         this.codeDescription = data.getCodeDescription();
         this.adapterName = data.getAdapterName();
@@ -38,18 +41,40 @@ public abstract class SalBaseException extends RuntimeException {
         this.properties = data.getProperties();
     }
 
-    protected SalBaseException(InfrastructureExceptionDTO data, Throwable cause) {
-        super(data.getMessage(), cause);
-        this.code = data.getCode();
-        this.codeDescription = data.getCodeDescription();
-        this.adapterName = data.getAdapterName();
-        this.sourceType = data.getSourceType();
-        this.sessionId = data.getSessionId();
-        this.sourceId = data.getSourceId();
-        this.sourcePath = data.getSourcePath();
-        this.timeStamp = data.getTimeStamp();
-        this.properties = data.getProperties();
+    public static SalException error(String message) {
+        return new SalException(Type.ERROR, message);
     }
+
+    public static SalException error(String code, String message) {
+        SalException ex = new SalException(Type.ERROR, message);
+        ex.setCode(code);
+        return ex;
+    }
+
+    public static SalException fatal(String message) {
+        return new SalException(Type.FATAL, message);
+    }
+
+    public static SalException validation(String message) {
+        return new SalException(Type.VALIDATION, message);
+    }
+
+    public static SalException fromDto(Type type, InfrastructureExceptionDTO data) {
+        return new SalException(type, data);
+    }
+
+    /**
+     * Returns the wire-format exception type name (e.g. "ErrorException", "FatalException").
+     */
+    public String getExceptionTypeName() {
+        return switch (type) {
+            case ERROR -> "ErrorException";
+            case FATAL -> "FatalException";
+            case VALIDATION -> "ValidationException";
+        };
+    }
+
+    public Type getType() { return type; }
 
     public String getCode() { return code; }
     public void setCode(String code) { this.code = code; }

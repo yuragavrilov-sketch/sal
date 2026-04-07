@@ -1,9 +1,9 @@
 package ru.copperside.sal.starter.web;
 
 import org.junit.jupiter.api.Test;
-import ru.copperside.sal.api.exception.ErrorException;
 import ru.copperside.sal.api.exception.InfrastructureExceptionDTO;
 import ru.copperside.sal.api.exception.SalErrorCodes;
+import ru.copperside.sal.api.exception.SalException;
 import ru.copperside.sal.starter.SalProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,8 +15,7 @@ class SalExceptionHandlerTest {
 
     @Test
     void salExceptionReturns500WithDto() {
-        ErrorException ex = new ErrorException(SalErrorCodes.ADAPTER_IS_OFFLINE);
-        ex.setCode(SalErrorCodes.ADAPTER_IS_OFFLINE);
+        SalException ex = SalException.error(SalErrorCodes.ADAPTER_IS_OFFLINE, "Adapter is offline");
 
         var response = handler.handleSalException(ex);
 

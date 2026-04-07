@@ -3,8 +3,8 @@ package ru.copperside.sal.starter.command;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
-import ru.copperside.sal.api.exception.ErrorException;
 import ru.copperside.sal.api.exception.SalErrorCodes;
+import ru.copperside.sal.api.exception.SalException;
 
 import java.time.Instant;
 import java.util.Map;
@@ -34,8 +34,7 @@ public class CommandTimeoutWatcher {
             PendingCommand pending = entry.getValue();
             if (pending.expireDate() != null && pending.expireDate().isBefore(now)) {
                 if (pendingCommands.remove(entry.getKey()) != null) {
-                    var ex = new ErrorException("Command execution timeout");
-                    ex.setCode(SalErrorCodes.COMMAND_EXECUTION_TIMEOUT);
+                    var ex = SalException.error(SalErrorCodes.COMMAND_EXECUTION_TIMEOUT, "Command execution timeout");
                     pending.future().completeExceptionally(ex);
                     log.warn("Command timeout: correlationId={}", entry.getKey());
                 }
@@ -49,8 +48,7 @@ public class CommandTimeoutWatcher {
     public void abortAll() {
         for (Map.Entry<String, PendingCommand> entry : pendingCommands.entrySet()) {
             if (pendingCommands.remove(entry.getKey()) != null) {
-                var ex = new ErrorException("Command aborted");
-                ex.setCode(SalErrorCodes.COMMAND_ABORTED);
+                var ex = SalException.error(SalErrorCodes.COMMAND_ABORTED, "Command aborted");
                 entry.getValue().future().completeExceptionally(ex);
             }
         }

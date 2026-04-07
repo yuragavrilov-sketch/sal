@@ -4,9 +4,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.servlet.HandlerInterceptor;
 import ru.copperside.sal.api.constant.Headers;
-import ru.copperside.sal.api.exception.ErrorException;
 import ru.copperside.sal.api.exception.ExceptionSourceType;
 import ru.copperside.sal.api.exception.SalErrorCodes;
+import ru.copperside.sal.api.exception.SalException;
 import ru.copperside.sal.starter.SalProperties;
 
 /**
@@ -33,8 +33,7 @@ public class EnvironmentKeyInterceptor implements HandlerInterceptor {
         }
         String receivedKey = request.getHeader(Headers.ENVIRONMENT_KEY);
         if (!expectedKey.equals(receivedKey)) {
-            ErrorException ex = new ErrorException(SalErrorCodes.MISMATCH_ENVIRONMENT_KEY);
-            ex.setCode(SalErrorCodes.MISMATCH_ENVIRONMENT_KEY);
+            SalException ex = SalException.error(SalErrorCodes.MISMATCH_ENVIRONMENT_KEY, "Environment key mismatch");
             ex.setSourceType(ExceptionSourceType.SAL);
             throw ex;
         }
