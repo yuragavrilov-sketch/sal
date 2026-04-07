@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import ru.copperside.sal.api.command.CommandBus;
 import ru.copperside.sal.starter.SalProperties;
+import ru.copperside.sal.starter.lifecycle.AdapterLifecycle;
 import ru.copperside.sal.starter.rabbitmq.SalRabbitAutoConfiguration;
 import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 import ru.copperside.sal.starter.session.SessionSerializer;
@@ -50,5 +51,11 @@ public class CommandBusAutoConfiguration {
     @ConditionalOnMissingBean
     public CommandTimeoutWatcher commandTimeoutWatcher(DefaultCommandBus commandBus) {
         return new CommandTimeoutWatcher(commandBus.pendingCommands);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AdapterLifecycle adapterLifecycle(SalProperties properties) {
+        return new AdapterLifecycle(properties);
     }
 }

@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import ru.copperside.sal.api.command.*;
 import ru.copperside.sal.api.exception.ErrorException;
 import ru.copperside.sal.api.exception.SalErrorCodes;
-import ru.copperside.sal.api.message.MessageDataKeys;
 import ru.copperside.sal.api.message.RecordedMessage;
 import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 
@@ -77,31 +76,6 @@ public class DefaultCommandBus implements CommandBus {
         }
 
         return future.thenApply(result -> (R) result);
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public <R extends CommandResult> CompletableFuture<ConfirmationResult> confirmatoryCommandAsync(
-            HaveResult<R> command, int timeoutSeconds, CommandPriority priority) {
-
-        String commandTypeName = resolveTypeName(command.getClass());
-        String correlationId = java.util.UUID.randomUUID().toString();
-        Instant expireDate = Instant.now().plusSeconds(timeoutSeconds);
-
-        CompletableFuture<Object> future = new CompletableFuture<>();
-        pendingCommands.put(correlationId, new PendingCommand(correlationId, expireDate, future));
-
-        // Publish with confirmation marker
-        RecordedMessage rm = new RecordedMessage();
-        rm.setCorrelationId(correlationId);
-        rm.setPriority((byte) priority.getValue());
-        rm.setPayload(command);
-        rm.setExpireDate(expireDate);
-        rm.getAdditionalData().put(MessageDataKeys.CONFIRMATION, "true");
-
-        publisher.publish(rm, commandTypeName);
-
-        return future.thenApply(result -> (ConfirmationResult) result);
     }
 
     /**

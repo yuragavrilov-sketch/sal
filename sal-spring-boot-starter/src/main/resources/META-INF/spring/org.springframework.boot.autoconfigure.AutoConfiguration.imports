@@ -3,7 +3,5 @@ ru.copperside.sal.starter.serialization.SalSerializationAutoConfiguration
 ru.copperside.sal.starter.rabbitmq.SalRabbitAutoConfiguration
 ru.copperside.sal.starter.command.CommandBusAutoConfiguration
 ru.copperside.sal.starter.command.CommandListenerAutoConfiguration
-ru.copperside.sal.starter.event.EventBusAutoConfiguration
 ru.copperside.sal.starter.web.WebAutoConfiguration
 ru.copperside.sal.starter.web.WebMvcAutoConfiguration
-ru.copperside.sal.starter.watchdog.WatchDogAutoConfiguration

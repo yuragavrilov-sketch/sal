@@ -9,30 +9,14 @@ import org.springframework.core.Ordered;
 import ru.copperside.sal.starter.SalProperties;
 import ru.copperside.sal.starter.session.SessionSerializer;
 
-/**
- * Creates SAL web layer beans: filters, interceptors, and exception handler.
- * MVC registration ({@link WebMvcAutoConfiguration}) runs after this configuration.
- */
 @AutoConfiguration
 @ConditionalOnWebApplication
 public class WebAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AdapterState adapterState() {
-        return new AdapterState();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public EnvironmentKeyInterceptor environmentKeyInterceptor(SalProperties properties) {
         return new EnvironmentKeyInterceptor(properties);
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public OfflineCheckInterceptor offlineCheckInterceptor(AdapterState adapterState, SalProperties properties) {
-        return new OfflineCheckInterceptor(adapterState, properties);
     }
 
     @Bean
