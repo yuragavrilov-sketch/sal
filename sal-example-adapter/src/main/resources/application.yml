@@ -1,0 +1,55 @@
+# =============================================================================
+# SAL Example Adapter — reference configuration
+# Maps C# JSON configs (Main.json, MB.json, Service.json) → Spring Boot YAML
+# =============================================================================
+
+sal:
+  adapter:
+    name: example-adapter
+    type: ExampleAdapter
+  service:
+    environment-key: ""
+    enable-offline-mode: true
+    mb-mode: false
+    sal-version: 1
+    min-ep-sal-version: 0
+    max-ep-sal-version: 2147483647
+    adapter-dependency: []
+  client:
+    request-timeout: 120
+    service-request-timeout: 10
+  command:
+    threads: 10
+    result-threads: 10
+  event:
+    threads: 1
+  watchdog:
+    ping-interval-ms: 10000
+    remover-interval-ms: 60000
+
+spring:
+  application:
+    name: ${sal.adapter.name}
+  rabbitmq:
+    host: localhost
+    port: 5672
+    virtual-host: dev
+    username: guest
+    password: guest
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  port: 8080
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true

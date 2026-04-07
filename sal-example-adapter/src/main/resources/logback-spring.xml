@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging configuration (ADR-006).
+  Replaces C# NLog.config + custom LayoutRenderers.
+  MDC fields: correlationId, sessionId, adapterName — set by interceptors/consumers.
+-->
+<configuration>
+
+    <springProperty scope="context" name="adapterName" source="sal.adapter.name" defaultValue="unknown"/>
+
+    <!-- ==================== Dev profile: human-readable console ==================== -->
+    <springProfile name="default,dev">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{sessionId:-no-sid}:%X{correlationId:-no-cid}] %-5level %logger{36} - %msg%n</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- ==================== Prod profile: structured JSON ==================== -->
+    <springProfile name="prod">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <customFields>{"adapterName":"${adapterName}"}</customFields>
+                <fieldNames>
+                    <timestamp>timestamp</timestamp>
+                    <thread>thread</thread>
+                    <logger>logger</logger>
+                    <level>level</level>
+                    <message>message</message>
+                    <stackTrace>stackTrace</stackTrace>
+                </fieldNames>
+                <includeMdcKeyName>correlationId</includeMdcKeyName>
+                <includeMdcKeyName>sessionId</includeMdcKeyName>
+                <includeMdcKeyName>adapterName</includeMdcKeyName>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+
+    <!-- Named loggers matching C# convention -->
+    <logger name="CommandBus" level="INFO"/>
+    <logger name="EventBus" level="INFO"/>
+    <logger name="WatchDog" level="INFO"/>
+    <logger name="RabbitMQ" level="INFO"/>
+
+</configuration>
