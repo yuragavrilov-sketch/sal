@@ -6,7 +6,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import ru.copperside.sal.starter.SalProperties;
-import ru.copperside.sal.starter.web.AdapterState;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,15 +21,13 @@ class PingControllerTest {
     @MockitoBean
     SalProperties salProperties;
 
-    @MockitoBean
-    AdapterState adapterState;
-
     @Test
-    void pingReturnsAdapterNameAndOnlineState() throws Exception {
+    void pingReturnsAdapterName() throws Exception {
         SalProperties.Adapter adapter = new SalProperties.Adapter();
         adapter.setName("test-adapter");
+        SalProperties.Service service = new SalProperties.Service();
         when(salProperties.getAdapter()).thenReturn(adapter);
-        when(adapterState.isOnline()).thenReturn(true);
+        when(salProperties.getService()).thenReturn(service);
 
         mockMvc.perform(get("/ping"))
                 .andExpect(status().isOk())
