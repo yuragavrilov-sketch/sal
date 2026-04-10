@@ -3,13 +3,13 @@ package ru.copperside.sal.starter.session;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
+import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
+import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
 /**
@@ -59,11 +59,15 @@ public class SessionSerializer {
         byte[] utf8Bytes = jsonString.getBytes(StandardCharsets.UTF_8);
 
         var baos = new ByteArrayOutputStream();
-        // C# DeflateStream uses raw DEFLATE (no zlib header)
-        try (var deflaterStream = new DeflaterOutputStream(baos)) {
+        // C# DeflateStream produces raw DEFLATE (no zlib header/trailer).
+        // Java's default Deflater adds a zlib wrapper unless nowrap=true.
+        Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
+        try (var deflaterStream = new DeflaterOutputStream(baos, deflater)) {
             // C# BinaryWriter.Write(string) writes a 7-bit encoded length prefix, then UTF-8 bytes
             write7BitEncodedInt(deflaterStream, utf8Bytes.length);
             deflaterStream.write(utf8Bytes);
+        } finally {
+            deflater.end();
         }
         return Base64.getEncoder().encodeToString(baos.toByteArray());
     }
@@ -74,11 +78,15 @@ public class SessionSerializer {
     public String decompressFromBase64(String base64Data) throws IOException {
         byte[] compressed = Base64.getDecoder().decode(base64Data);
 
-        try (var inflaterStream = new InflaterInputStream(new ByteArrayInputStream(compressed))) {
+        // Inflater with nowrap=true to match raw DEFLATE produced by C# DeflateStream.
+        Inflater inflater = new Inflater(true);
+        try (var inflaterStream = new InflaterInputStream(new ByteArrayInputStream(compressed), inflater)) {
             // C# BinaryReader.ReadString() reads 7-bit encoded length, then UTF-8 bytes
             int length = read7BitEncodedInt(inflaterStream);
             byte[] utf8Bytes = inflaterStream.readNBytes(length);
             return new String(utf8Bytes, StandardCharsets.UTF_8);
+        } finally {
+            inflater.end();
         }
     }
 
