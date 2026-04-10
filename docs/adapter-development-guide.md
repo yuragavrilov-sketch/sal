@@ -11,12 +11,11 @@
 7. [Отправка команд другим адаптерам](#7-отправка-команд-другим-адаптерам)
 8. [Работа с событиями](#8-работа-с-событиями)
 9. [Сессия](#9-сессия)
-10. [HTTP-контроллеры](#10-http-контроллеры)
-11. [Регистрация типов для C# interop](#11-регистрация-типов-для-c-interop)
-12. [Обработка ошибок](#12-обработка-ошибок)
-13. [Тестирование](#13-тестирование)
-14. [Чеклист перед деплоем](#14-чеклист-перед-деплоем)
-15. [См. также](#15-см-также)
+10. [Регистрация типов для C# interop](#10-регистрация-типов-для-c-interop)
+11. [Обработка ошибок](#11-обработка-ошибок)
+12. [Тестирование](#12-тестирование)
+13. [Чеклист перед деплоем](#13-чеклист-перед-деплоем)
+14. [См. также](#14-см-также)
 
 ---
 
@@ -24,7 +23,7 @@
 
 ### Шаг 1 — pom.xml
 
-Создайте Maven-проект с единственной зависимостью `sal-spring-boot-starter`. Всё остальное (Spring Boot, RabbitMQ, Jackson, Actuator) притягивается транзитивно.
+Создайте Maven-проект с единственной зависимостью `sal-spring-boot-starter`. Всё остальное (Spring Boot core, RabbitMQ, Jackson) притягивается транзитивно. Адаптер запускается как non-web Spring Boot приложение (`spring.main.web-application-type=none`): HTTP-слой, CORS и Actuator-эндпоинты не подключаются.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -96,6 +95,8 @@ sal:
 spring:
   application:
     name: ${sal.adapter.name}
+  main:
+    web-application-type: none   # адаптер — non-web Spring Boot приложение
   rabbitmq:
     host: localhost
     port: 5672
@@ -104,21 +105,6 @@ spring:
     password: guest
   lifecycle:
     timeout-per-shutdown-phase: 30s
-
-server:
-  port: 8080
-  shutdown: graceful
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-  endpoint:
-    health:
-      show-details: always
-      probes:
-        enabled: true
 ```
 
 ### Шаг 3 — @SpringBootApplication
@@ -194,7 +180,7 @@ mvn spring-boot:run
 ```
 INFO  r.c.s.s.command.CommandHandlerRegistry  : Registered CommandHandler: GreetCommand -> GreetCommandHandler
 INFO  r.c.sal.starter.SalAutoConfiguration    : SAL adapter 'my-adapter' (type=MyAdapter) started
-INFO  o.s.b.w.e.tomcat.TomcatWebServer        : Tomcat started on port 8080
+INFO  r.c.s.s.command.CommandListenerRegistrar: Started RabbitMQ listeners for adapter 'my-adapter'
 ```
 
 ---
@@ -212,14 +198,11 @@ com.example.myadapter/
 ├── event/                          # доменные события и подписчики
 │   ├── OrderCreatedEvent.java
 │   └── OrderCreatedEventHandler.java
-├── controller/                     # HTTP-эндпоинты (PingController обязателен)
-│   ├── PingController.java
-│   └── GreetController.java        # пример REST-контроллера
 └── config/                         # дополнительная конфигурация (TypeMapping и т.п.)
     └── TypeMappingConfig.java
 ```
 
-**Правило именования пакетов:** держите команды, события и контроллеры в отдельных пакетах — это облегчает поиск и уменьшает циклические зависимости.
+**Правило именования пакетов:** держите команды и события в отдельных пакетах — это облегчает поиск и уменьшает циклические зависимости.
 
 ---
 
@@ -241,7 +224,7 @@ CommandResult             ← маркерный интерфейс (все ре
 
 ### @CommandType — ключевая аннотация
 
-`@CommandType` задаёт полное имя C#-типа, которое записывается в заголовок wire-сообщения. Без неё фреймворк не сможет смаппировать входящее сообщение на Java-класс и выбросит `ErrorException` с кодом `UnknownCommandResultType`.
+`@CommandType` задаёт полное имя C#-типа, которое записывается в заголовок wire-сообщения. Без неё фреймворк не сможет смаппировать входящее сообщение на Java-класс и выбросит `SalException` типа `ERROR` с кодом `UnknownCommandResultType`.
 
 ```java
 @CommandType("TCB.KCProcessing.Client.ReversalCommand")
@@ -384,17 +367,18 @@ public class FetchRatesCommandHandler
 
 ### Предупреждение о ThreadLocal в async-коллбэках
 
-`SessionHolder` хранит данные сессии в `ThreadLocal`. В синхронных обработчиках это работает прозрачно — поток тот же. Но в асинхронных коллбэках (`thenApply`, `thenCompose`, `handle`) поток может смениться:
+`SalContext` хранит сессию, `CommandContext` и correlationId в `ThreadLocal`. В синхронных обработчиках это работает прозрачно — поток тот же. Но в асинхронных коллбэках (`thenApply`, `thenCompose`, `handle`) поток может смениться. `CommandConsumer` уже восстанавливает полный `ContextSnapshot` в финальном `whenComplete`, но если вы сами создаёте промежуточные callback-и — захватите нужные данные в локальные переменные заранее:
 
 ```java
 @Override
 public CompletableFuture<MyResult> executeAsync(MyCommand command) {
     // ПРАВИЛЬНО: читаем сессию ДО перехода в другой поток
-    String sessionId = SessionHolder.getSessionId();
+    Map<String, Object> session = SalContext.session();
+    String sessionId = session != null ? (String) session.get("SessionId") : null;
 
     return someAsyncOp()
             .thenApply(data -> {
-                // НЕПРАВИЛЬНО: SessionHolder.getSessionId() здесь может вернуть null
+                // НЕПРАВИЛЬНО: SalContext.session() здесь может вернуть null
                 // ПРАВИЛЬНО: используем sessionId, захваченный выше
                 MyResult result = new MyResult();
                 result.setProcessedBy(sessionId);
@@ -517,33 +501,51 @@ public CompletableFuture<PaymentResult> processPayment(String orderId, BigDecima
 | `High`           | 9                 | Срочные задачи                             |
 | `RealTime`       | 10                | Критичные операции реального времени       |
 
-### Полный пример: HTTP → CommandBus → ответ клиенту
+### Полный пример: запуск демо-нагрузки при старте адаптера
+
+Поскольку адаптер — это non-web приложение, «точка входа» для инициации команд — это, как правило, `ApplicationRunner`, `@EventListener(ApplicationReadyEvent.class)` или собственный scheduler. Ниже приведён пример в стиле `EchoRunner` из `sal-example-adapter`: после готовности контекста компонент в отдельном потоке публикует несколько команд и логирует их round-trip.
 
 ```java
-@RestController
-@RequestMapping("/echo")
-public class EchoController {
+@Component
+@ConditionalOnProperty(prefix = "sal.example.echo-runner", name = "enabled",
+        havingValue = "true", matchIfMissing = true)
+public class EchoRunner {
 
+    private static final Logger log = LoggerFactory.getLogger(EchoRunner.class);
     private final CommandBus commandBus;
 
-    public EchoController(CommandBus commandBus) {
+    public EchoRunner(CommandBus commandBus) {
         this.commandBus = commandBus;
     }
 
-    @GetMapping
-    public CompletableFuture<ResponseEntity<String>> echo(
-            @RequestParam(defaultValue = "hello") String payload) {
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
+        Thread worker = new Thread(this::runEchoLoop, "echo-runner");
+        worker.setDaemon(true);
+        worker.start();
+    }
 
-        EchoCommand command = new EchoCommand();
-        command.setPayload(payload);
-
-        return commandBus.<EchoResult>executeCommandAsync(command, 30, CommandPriority.Normal)
-                .thenApply(result -> ResponseEntity.ok(result.getEcho()))
-                .exceptionally(ex -> ResponseEntity.internalServerError()
-                        .body("Command failed: " + ex.getMessage()));
+    private void runEchoLoop() {
+        try {
+            Thread.sleep(2_000); // дать listener-ам прогреться
+            for (int i = 1; i <= 3; i++) {
+                EchoCommand cmd = new EchoCommand();
+                cmd.setPayload("ping-" + i);
+                EchoResult result = commandBus
+                        .<EchoResult>executeCommandAsync(cmd, 10, CommandPriority.Normal)
+                        .get();
+                log.info("Echo round-trip #{}: {}", i, result.getEcho());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.error("EchoRunner failed", e);
+        }
     }
 }
 ```
+
+После отработки runner-а адаптер продолжает жить обычным процессом и обслуживать входящие команды. Поведение управляется флагом `sal.example.echo-runner.enabled` — так же, как эталонный `EchoRunner` из `sal-example-adapter`.
 
 ---
 
@@ -637,20 +639,21 @@ public class OrderProcessingService {
 
 ## 9. Сессия
 
-`SessionHolder` — thread-local хранилище данных сессии. Фреймворк автоматически заполняет его при получении команды или события через RabbitMQ (из заголовков wire-сообщения) и при HTTP-запросах (через `SessionFilter`). Сессия автоматически передаётся при отправке команд другим адаптерам.
+`SalContext` — единый thread-local фасад для данных сессии, `CommandContext` и MDC `correlationId`. Фреймворк автоматически заполняет его при получении команды или события через RabbitMQ — сессия переносится в `RecordedMessage.additionalData[MessageDataKeys.SESSION]` и больше нигде (HTTP-транспорта в SAL нет). Сессия автоматически передаётся при отправке команд другим адаптерам.
 
 ### Доступ к данным сессии
 
 ```java
-import ru.copperside.sal.starter.context.SessionHolder;
+import ru.copperside.sal.starter.context.SalContext;
+import ru.copperside.sal.api.constant.MessageDataKeys;
 
 @Component
 public class AuditService {
 
     public void logAction(String action) {
-        String sessionId  = SessionHolder.getSessionId();    // ID текущей сессии
-        String operationId = SessionHolder.getOperationId(); // ID текущей операции
-        Map<String, Object> session = SessionHolder.get();   // весь Map сессии
+        Map<String, Object> session = SalContext.session(); // весь Map сессии
+        String sessionId  = session != null ? (String) session.get(MessageDataKeys.SESSION_ID)   : null;
+        String operationId = session != null ? (String) session.get(MessageDataKeys.OPERATION_ID) : null;
 
         log.info("Action '{}' by session={}, operation={}",
                 action, sessionId, operationId);
@@ -665,94 +668,17 @@ public class AuditService {
 Map<String, Object> session = new HashMap<>();
 session.put("SessionId", "test-session-id");
 session.put("OperationId", "42");
-SessionHolder.set(session);
+SalContext.setSession(session);
 
 // Очистить после завершения (фреймворк делает это автоматически в entry points):
-SessionHolder.clear();
+SalContext.clear();
 ```
 
-**Важно:** не вызывайте `SessionHolder.clear()` вручную внутри бизнес-логики — только если пишете собственный entry point (кастомный фильтр, Scheduled задача и т.п.). Фреймворк сам чистит ThreadLocal в finally-блоках HTTP-фильтров и RabbitMQ-консьюмеров.
+**Важно:** не вызывайте `SalContext.clear()` вручную внутри бизнес-логики — только если пишете собственный entry point (например, `Scheduled`-задачу или кастомный consumer). Фреймворк сам чистит ThreadLocal в finally-блоках RabbitMQ-консьюмеров, а для `CommandHandlerAsync` — в `whenComplete`-callback через захват `ContextSnapshot`.
 
 ---
 
-## 10. HTTP-контроллеры
-
-### PingController — обязателен для WatchDog
-
-WatchDog других адаптеров регулярно вызывает `GET /ping` для проверки доступности. Без этого эндпоинта адаптер будет считаться недоступным.
-
-```java
-package com.example.myadapter.controller;
-
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
-import ru.copperside.sal.api.dto.service.PingResponse;
-import ru.copperside.sal.starter.SalProperties;
-import ru.copperside.sal.starter.web.AdapterState;
-
-import java.time.OffsetDateTime;
-
-@RestController
-public class PingController {
-
-    private final SalProperties properties;
-    private final AdapterState adapterState;
-
-    public PingController(SalProperties properties, AdapterState adapterState) {
-        this.properties = properties;
-        this.adapterState = adapterState;
-    }
-
-    @GetMapping("/ping")
-    public PingResponse ping() {
-        PingResponse response = new PingResponse();
-        response.setOnline(adapterState.isOnline());
-        response.setServerTime(OffsetDateTime.now());
-        response.setRecipientServiceName(properties.getAdapter().getName());
-        return response;
-    }
-}
-```
-
-### Кастомные контроллеры
-
-Кастомные контроллеры ничем не отличаются от обычных Spring MVC контроллеров:
-
-```java
-@RestController
-@RequestMapping("/orders")
-public class OrderController {
-
-    private final CommandBus commandBus;
-
-    public OrderController(CommandBus commandBus) {
-        this.commandBus = commandBus;
-    }
-
-    @PostMapping
-    public CompletableFuture<ResponseEntity<CreateOrderResult>> createOrder(
-            @RequestBody CreateOrderRequest request) {
-
-        CreateOrderCommand command = new CreateOrderCommand();
-        command.setCustomerId(request.getCustomerId());
-        command.setItems(request.getItems());
-
-        return commandBus.<CreateOrderResult>executeCommandAsync(command)
-                .thenApply(result -> ResponseEntity.ok(result))
-                .exceptionally(ex -> ResponseEntity.internalServerError().build());
-    }
-}
-```
-
-### EnvironmentKey — автоматическая валидация
-
-Если в `application.yml` задан непустой `sal.service.environment-key`, фреймворк автоматически проверяет заголовок `X-Environment-Key` в каждом HTTP-запросе через `EnvironmentKeyInterceptor`. При несовпадении вернётся `ErrorException` с кодом `MismatchEnvironmentKey`.
-
-Разработчику ничего делать не нужно — механизм включается автоматически при непустом значении `environment-key`.
-
----
-
-## 11. Регистрация типов для C# interop
+## 10. Регистрация типов для C# interop
 
 `TypeMappingRegistry` хранит двунаправленное отображение между полными именами C#-типов и Java-классами. Это необходимо для корректной десериализации входящих wire-сообщений от C#-клиентов.
 
@@ -794,43 +720,60 @@ public class TypeMappingConfig {
 ```
 
 **Почему это важно:**
-Wire-формат передаёт тип данных как строку C#-имени в заголовке AMQP-сообщения. При получении фреймворк ищет соответствующий Java-класс в `TypeMappingRegistry`. Если класс не найден — десериализация упадёт с `ErrorException(UnknownCommandResultType)`.
+Wire-формат передаёт тип данных как строку C#-имени в заголовке AMQP-сообщения. При получении фреймворк ищет соответствующий Java-класс в `TypeMappingRegistry`. Если класс не найден — десериализация упадёт с `SalException.error(SalErrorCodes.UNKNOWN_COMMAND_RESULT_TYPE, ...)`.
 
 ---
 
-## 12. Обработка ошибок
+## 11. Обработка ошибок
 
-### Иерархия исключений
+### Единый класс исключения
+
+В SAL одно checked-исключение `SalException extends RuntimeException` с перечислением `SalException.Type`:
 
 ```
 RuntimeException
-└── SalBaseException          ← базовый класс (код, описание, сессия, адаптер)
-    ├── ErrorException        ← исправимая ошибка
-    ├── ValidationException   ← ошибка валидации входных данных
-    └── FatalException        ← критическая ошибка, требует вмешательства
+└── SalException  (getCode(), getType(), getExceptionTypeName())
+        └── Type { ERROR, FATAL, VALIDATION }
 ```
+
+Создаётся через статические фабрики:
+
+- `SalException.error(code, message)` — исправимая бизнес-ошибка (тип `ERROR`);
+- `SalException.fatal(code, message)` — критическая ошибка, требует вмешательства (тип `FATAL`);
+- `SalException.validation(code, message)` — ошибка валидации входных данных (тип `VALIDATION`).
+
+`getExceptionTypeName()` возвращает C# wire-имя (`ErrorException`, `FatalException`, `ValidationException`) — оно попадает в `FailedResult` для совместимости с C#-клиентами.
 
 ### Как бросать исключения
 
 ```java
+import ru.copperside.sal.api.exception.SalException;
+import ru.copperside.sal.api.exception.SalErrorCodes;
+
 @Override
 public ProcessResult execute(ProcessCommand command) {
     // Ошибка валидации:
     if (command.getAmount() == null || command.getAmount().signum() <= 0) {
-        throw new ValidationException("Amount must be positive, got: " + command.getAmount());
+        throw SalException.validation(
+                SalErrorCodes.VALIDATION_EXCEPTION,
+                "Amount must be positive, got: " + command.getAmount());
     }
 
     // Исправимая бизнес-ошибка:
     Account account = accountRepo.findById(command.getAccountId()).orElse(null);
     if (account == null) {
-        throw new ErrorException("Account not found: " + command.getAccountId());
+        throw SalException.error(
+                SalErrorCodes.ERROR_EXCEPTION,
+                "Account not found: " + command.getAccountId());
     }
 
     // Критическая ошибка:
     try {
         return process(command, account);
     } catch (DatabaseConnectionException e) {
-        throw new FatalException("Database unavailable", e);
+        throw SalException.fatal(
+                SalErrorCodes.FATAL_EXCEPTION,
+                "Database unavailable: " + e.getMessage());
     }
 }
 ```
@@ -851,17 +794,15 @@ SalErrorCodes.NO_AVAILABLE_ADAPTER       // "NoAvailableAdapter"
 SalErrorCodes.MISMATCH_ENVIRONMENT_KEY   // "MismatchEnvironmentKey"
 ```
 
-### SalExceptionHandler — автоматическое преобразование
+### Как SAL доставляет исключения вызывающему адаптеру
 
-`SalExceptionHandler` (входит в стартер, активируется автоматически) перехватывает все `SalBaseException` и преобразует их в HTTP-ответ `500` с телом `InfrastructureExceptionDTO` в wire-формате (PascalCase JSON). C#-клиент корректно распакует DTO и бросит соответствующее исключение на своей стороне.
-
-Неперехваченные `Exception` оборачиваются в `FatalException` с кодом `FatalException`.
+HTTP-маппера ошибок в SAL больше нет. Если `CommandHandler` бросает `SalException` (или любое другое необработанное исключение), `CommandConsumer` конвертирует его в `FailedResult` и отправляет в exchange `CommandCompletedExchange` — вызывающая сторона получит результат через обычный request/reply flow. Сообщение исходного исключения кладётся в поле `FailedResult.setExeption(String)` (опечатка `Exeption` сохранена для wire-совместимости с C#).
 
 Разработчику ничего настраивать не нужно — просто бросайте нужное исключение из обработчика.
 
 ---
 
-## 13. Тестирование
+## 12. Тестирование
 
 ### Unit-тест обработчика команды
 
@@ -895,29 +836,44 @@ class EchoCommandHandlerTest {
 }
 ```
 
-### Интеграционный тест с @SpringBootTest
+### Интеграционный тест с @SpringBootTest и Testcontainers RabbitMQ
+
+У адаптера нет HTTP-эндпоинтов, поэтому полный интеграционный тест выполняется через реальный RabbitMQ (например, `RabbitMQContainer` из Testcontainers) и `CommandBus`:
 
 ```java
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import static org.assertj.core.api.Assertions.assertThat;
+@SpringBootTest
+@Testcontainers
+class EchoCommandIntegrationTest {
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class PingControllerIntegrationTest {
+    @Container
+    static RabbitMQContainer rabbit = new RabbitMQContainer("rabbitmq:3-management");
+
+    @DynamicPropertySource
+    static void rabbitProps(DynamicPropertyRegistry registry) {
+        registry.add("spring.rabbitmq.host", rabbit::getHost);
+        registry.add("spring.rabbitmq.port", rabbit::getAmqpPort);
+        registry.add("spring.rabbitmq.username", rabbit::getAdminUsername);
+        registry.add("spring.rabbitmq.password", rabbit::getAdminPassword);
+    }
 
     @Autowired
-    private TestRestTemplate restTemplate;
+    private CommandBus commandBus;
 
     @Test
-    void pingEndpointShouldReturnOnlineTrue() {
-        var response = restTemplate.getForObject("/ping", java.util.Map.class);
-        assertThat(response).containsKey("Online");
-        assertThat(response.get("Online")).isEqualTo(true);
+    void shouldRoundTripEchoCommand() throws Exception {
+        EchoCommand cmd = new EchoCommand();
+        cmd.setPayload("hello");
+
+        EchoResult result = commandBus
+                .<EchoResult>executeCommandAsync(cmd, 10, CommandPriority.Normal)
+                .get();
+
+        assertThat(result.getEcho()).isEqualTo("hello");
     }
 }
 ```
+
+HTTP-слоя в адаптере нет, поэтому `TestRestTemplate`/`WebEnvironment.RANDOM_PORT` здесь не применимы — всё тестирование идёт через очереди.
 
 ### Тест совместимости wire-формата (PascalCase)
 
@@ -963,31 +919,30 @@ class WireFormatCompatibilityTest {
 
 ---
 
-## 14. Чеклист перед деплоем
+## 13. Чеклист перед деплоем
 
 | # | Что проверить | Критичность |
 |---|---------------|-------------|
 | 1 | `sal.adapter.name` уникален в кластере | Критично |
 | 2 | `sal.adapter.type` совпадает с C#-конфигурацией | Критично |
 | 3 | Все `@CommandType` значения точно совпадают с C#-именами | Критично |
-| 4 | `PingController` реализован по пути `GET /ping` | Критично |
+| 4 | Реализован `EchoRunner`/`ApplicationRunner`/event-listener для демо- или инициирующих сценариев (опционально) | Желательно |
 | 5 | Все типы результатов зарегистрированы в `TypeMappingRegistry` | Критично |
 | 6 | `spring.rabbitmq.*` указывает на правильный брокер и vhost | Критично |
 | 7 | Для каждого `CommandHandler` существует ровно один обработчик | Критично |
-| 8 | `ErrorException`/`ValidationException`/`FatalException` бросаются с понятными сообщениями | Важно |
-| 9 | Захват данных сессии из `SessionHolder` происходит до асинхронных операций | Важно |
-| 10 | `sal.service.environment-key` одинаков на всех адаптерах среды | Важно |
-| 11 | `sal.command.threads` и `sal.event.threads` настроены под нагрузку | Желательно |
-| 12 | Wire-формат проверен тестом на PascalCase | Желательно |
-| 13 | Actuator endpoints `health`, `info` доступны | Желательно |
-| 14 | Graceful shutdown настроен (`server.shutdown: graceful`) | Желательно |
+| 8 | `SalException.error(...)`/`validation(...)`/`fatal(...)` бросаются с понятными сообщениями и кодом из `SalErrorCodes` | Важно |
+| 9 | Захват данных сессии из `SalContext.session()` происходит до асинхронных операций | Важно |
+| 10 | `sal.command.threads` и `sal.event.threads` настроены под нагрузку | Желательно |
+| 11 | Wire-формат проверен тестом на PascalCase | Желательно |
+| 12 | `spring.main.web-application-type: none` задан в `application.yml` | Желательно |
+| 13 | Graceful shutdown настроен (`spring.lifecycle.timeout-per-shutdown-phase`) | Желательно |
 
 ---
 
-## 15. См. также
+## 14. См. также
 
 - [configuration-reference.md](configuration-reference.md) — полный справочник всех параметров `application.yml`
 - [wire-protocol.md](wire-protocol.md) — описание wire-формата AMQP-сообщений, PascalCase JSON, заголовки
 - [troubleshooting.md](troubleshooting.md) — диагностика типичных проблем (нет обработчика, таймаут, ошибки маппинга типов)
-- [glossary.md](glossary.md) — термины и соответствия Java ↔ C# (CommandBus, EventBus, SessionHolder и др.)
+- [glossary.md](glossary.md) — термины и соответствия Java ↔ C# (CommandBus, EventBus, SalContext и др.)
 - [architecture.md](architecture.md) — архитектурные решения (ADR), структура модулей, принципы взаимодействия

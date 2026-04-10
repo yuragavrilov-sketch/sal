@@ -189,51 +189,33 @@ JSON string
 
 **Паттерн захвата контекста для async-обработчиков:**
 
-Это критически важная деталь реализации. `ThreadLocal`-контекст (`SessionHolder`, `SalMdc`) очищается в блоке `finally` вызывающего потока. Если async-обработчик вернёт `CompletableFuture`, колбэк `whenComplete` будет выполняться в другом потоке, где ThreadLocals уже будут пустыми.
+Это критически важная деталь реализации. Единый ThreadLocal-фасад `SalContext` (session + commandContext + MDC `correlationId`) очищается в блоке `finally` вызывающего потока. Если async-обработчик вернёт `CompletableFuture`, колбэк `whenComplete` будет выполняться в другом потоке, где ThreadLocals уже будут пустыми.
 
-Решение: контекст захватывается **до** начала async-выполнения:
+Решение: контекст захватывается **до** начала async-выполнения в приватный record `ContextSnapshot` (объявлен внутри `CommandConsumer`), который копирует session, `CommandContext` и correlationId. Вызывающий поток при этом взводит внутренний флаг `asyncDispatched`, чтобы не очищать `SalContext` до завершения async-обработчика:
 
 ```java
-// Capture context before async execution
-Map<String, Object> capturedSession = SessionHolder.get();
-String capturedCorrelationId = rm.getCorrelationId();
+// Capture full SalContext before async execution
+ContextSnapshot snapshot = ContextSnapshot.capture();
+asyncDispatched = true; // prevents outer finally-block from clearing SalContext
 
 resultFuture = asyncHandler.executeAsync((Command) payload);
 
 resultFuture.whenComplete((result, ex) -> {
-    // Restore context in the callback thread
-    if (capturedSession != null) SessionHolder.set(capturedSession);
-    SalMdc.set(capturedCorrelationId, null, null);
+    // Restore snapshot in the callback thread
+    snapshot.restore();
     try {
         // ... send result
     } finally {
-        SessionHolder.clear();
-        SalMdc.clear();
+        SalContext.clear();
     }
 });
 ```
 
-При добавлении новых ThreadLocal-контекстов в систему нужно повторить этот паттерн здесь.
+`ContextSnapshot.capture()` вызывает `SalContext.session()` / `commandContext()` и текущий correlationId, а `restore()` раскладывает их обратно через `SalContext.setSession(...)`, `SalContext.setCommandContext(...)` и `SalContext.setCorrelationId(...)`. При добавлении новых полей в `SalContext` их нужно добавить и в `ContextSnapshot`.
 
 **Что можно менять:** логику роутинга результатов, обработку ошибок.
 
 **Что нельзя менять:** паттерн захвата контекста для async (иначе MDC и сессия будут пустыми в логах и хендлерах).
-
-### 4.5 WatchDogService
-
-**Что делает:** Управляет переходами адаптера между состояниями ONLINE/OFFLINE на основе результатов мониторов.
-
-**Контракт потокобезопасности:** все публичные методы (`signalHealthy`, `signalUnhealthy`, `toggleOnline`) объявлены `synchronized`. Это обязательно: мониторы вызываются из `@Scheduled` — потенциально из разных потоков одновременно.
-
-```java
-public synchronized void signalHealthy() { ... }
-public synchronized void signalUnhealthy(String reason) { ... }
-public synchronized boolean toggleOnline() { ... }
-```
-
-**Что можно менять:** логику событий (какие события публиковать при переходе), пороги.
-
-**Что нельзя менять:** `synchronized` на публичных методах — их удаление создаёт race condition между scheduled-мониторами.
 
 ---
 
@@ -297,10 +279,9 @@ C# оригинал содержит ведущий пробел. C#-клиен�
 |---|---|---|---|
 | `WireCompatibilityTest` | `sal-api` | PascalCase-сериализация, round-trip ключевых типов (`RecordedMessage`, `CommandContext`, `InfrastructureExceptionDTO`), значения `CommandPriority` | При любом изменении типов в `sal-api` |
 | `SalMessageConverterTest` | `sal-spring-boot-starter` | AMQP round-trip, маппинг всех AMQP-свойств, `SourceServiceId` в `Additional-Data` | При изменении `SalMessageConverter` |
-| `DefaultCommandBusTest` | `sal-spring-boot-starter` | Pending commands: resolve, reject, expire по таймауту; `SessionHolder`, `CommandContextHolder`, `SalMdc` как ThreadLocal | При изменении `DefaultCommandBus`, `CommandTimeoutWatcher`, context holders |
+| `DefaultCommandBusTest` | `sal-spring-boot-starter` | Pending commands: resolve, reject, expire по таймауту; `SalContext` (session, commandContext, correlationId) как единый ThreadLocal | При изменении `DefaultCommandBus`, `CommandTimeoutWatcher`, `SalContext` |
 | `WireObjectMapperTest` | `sal-spring-boot-starter` | Настройки `wireObjectMapper`: PascalCase, non-null, string enums, ISO 8601 даты, tolerate unknown fields | При изменении `SalSerializationAutoConfiguration` |
 | `SessionSerializerTest` | `sal-spring-boot-starter` | Compress/decompress round-trip, 7-bit encoding для малых и больших значений, Base64 output | При любом изменении `SessionSerializer` |
-| `SalExceptionHandlerTest` | `sal-spring-boot-starter` | HTTP 500 для `ErrorException`, HTTP 500 с `FatalException` для generic exception | При изменении `SalExceptionHandler` |
 
 ### Запуск тестов
 
@@ -341,10 +322,6 @@ mvn -pl sal-api test -Dtest=WireCompatibilityTest
 
 `DefaultEventBus` при публикации событий использует `javaClass.getName()` в качестве имени exchange. Правильное поведение — использовать C# имя типа из `TypeMappingRegistry`. Это расхождение может привести к тому, что C#-подписчики не получат события, если exchange-имя не совпадёт с ожидаемым.
 
-### 8.4 EndPointRegistry.updateAvailability() использует строгое сравнение версий
-
-`EndPointRegistry.updateAvailability()` использует `> minVer` вместо `>= minVer` при проверке доступности endpoint по версии. Это означает, что endpoint с версией ровно равной `minVer` считается недоступным, что может быть нежелательным поведением.
-
 ---
 
 ## 9. См. также
@@ -353,4 +330,4 @@ mvn -pl sal-api test -Dtest=WireCompatibilityTest
 - [wire-protocol.md](./wire-protocol.md) — детальное описание wire-протокола, AMQP-топология, форматы сообщений
 - [configuration-reference.md](./configuration-reference.md) — все `sal.*` properties с описаниями и дефолтами
 - [adapter-development-guide.md](./adapter-development-guide.md) — как создать адаптер на базе `sal-spring-boot-starter`
-- [glossary.md](./glossary.md) — термины: RecordedMessage, CommandBus, WatchDog, EndPoint и другие
+- [glossary.md](./glossary.md) — термины: RecordedMessage, CommandBus и другие

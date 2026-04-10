@@ -10,8 +10,9 @@
 
 - **Команды** (request/reply и fire-and-forget) между адаптерами через RabbitMQ.
 - **События** (publish/subscribe, fanout) между адаптерами через RabbitMQ.
-- **Проброс сессии** (Session) и корреляции (CorrelationId) между адаптерами по всем протоколам.
-- **WatchDog** — мониторинг доступности удалённых адаптеров и управление жизненным циклом.
+- **Проброс сессии** (Session) и корреляции (CorrelationId) между адаптерами через AMQP.
+
+Адаптеры на базе SAL — это **non-web Spring Boot приложения** (`spring.main.web-application-type=none`). HTTP-слоя, CORS, Actuator и inter-adapter HTTP healthcheck в текущей версии нет: всё взаимодействие между адаптерами идёт исключительно через RabbitMQ.
 
 TCB-SAL — это **Java/Spring Boot миграция** оригинального C# сервиса `TCB.Infrastructure`. Цель миграции: Java-адаптеры запускаются **в той же production-среде** рядом с C#-адаптерами, используя общий RabbitMQ. Совместимость на уровне wire-формата полностью сохранена (см. [Раздел 10](#10-смешанная-среда-cjava) и [wire-protocol.md](wire-protocol.md)).
 
@@ -64,8 +65,8 @@ graph TD
 | `ru.copperside.sal.api.event` | `Event`, `EventBus`, `EventHandler`, `EventSource` |
 | `ru.copperside.sal.api.message` | `RecordedMessage` — wire-обёртка для всех AMQP-сообщений |
 | `ru.copperside.sal.api.annotation` | `@CommandType`, `@ServiceMessage` |
-| `ru.copperside.sal.api.constant` | `Headers` — HTTP-заголовки TCB |
-| `ru.copperside.sal.api.exception` | `ErrorException`, `SalErrorCodes` |
+| `ru.copperside.sal.api.constant` | `Headers`, `MessageDataKeys` — константы wire-протокола |
+| `ru.copperside.sal.api.exception` | `SalException` (enum `SalException.Type { ERROR, FATAL, VALIDATION }`), `SalErrorCodes` |
 
 ### sal-spring-boot-starter
 
@@ -77,13 +78,9 @@ graph TD
 | `ru.copperside.sal.starter.event` | `DefaultEventBus` |
 | `ru.copperside.sal.starter.rabbitmq` | `SalMessageConverter`, `SalRabbitAutoConfiguration`, `SalTopologyConfigurer`, `SalRabbitConstants` |
 | `ru.copperside.sal.starter.serialization` | `TypeMappingRegistry`, `SalSerializationAutoConfiguration` |
-| `ru.copperside.sal.starter.context` | `SessionHolder`, `CommandContextHolder`, `SalMdc` |
+| `ru.copperside.sal.starter.context` | `SalContext` — единый ThreadLocal-фасад для session, CommandContext и correlationId (MDC) |
 | `ru.copperside.sal.starter.session` | `SessionSerializer` |
-| `ru.copperside.sal.starter.web` | `SalContextFilter`, `SessionFilter`, `AdapterState`, `EnvironmentKeyInterceptor`, `OfflineCheckInterceptor`, `SalExceptionHandler` |
-| `ru.copperside.sal.starter.watchdog` | `WatchDogService`, `EndPointRegistry`, `EndPointsAvailableScheduler`, `EndPointsRemoverScheduler` |
 | `ru.copperside.sal.starter.lifecycle` | `AdapterLifecycle` |
-| `ru.copperside.sal.starter.health` | `AdapterStateHealthIndicator` |
-| `ru.copperside.sal.starter.client` | `SalRestClient` |
 
 ### sal-test
 
@@ -91,7 +88,7 @@ Test utilities для написания тестов адаптеров. В т�
 
 ### sal-example-adapter
 
-Эталонная реализация адаптера: `EchoCommand` + `EchoCommandHandler`. Демонстрирует корректное использование SAL и служит живой документацией.
+Эталонная реализация адаптера: `EchoCommand` + `EchoCommandHandler` + `EchoRunner`. Демонстрирует корректное использование SAL и служит живой документацией. `EchoRunner` — `@Component`, слушающий `ApplicationReadyEvent`: после небольшой задержки публикует несколько `EchoCommand` через `CommandBus.executeCommandAsync()`, логирует round-trip результаты и завершает работу; адаптер при этом продолжает жить как обычный non-web процесс. Отключается флагом `sal.example.echo-runner.enabled=false`.
 
 ---
 
@@ -199,11 +196,11 @@ sequenceDiagram
     A->>CE: publishCommand(command)<br/>routing key = commandTypeName
     CE->>Q: route by binding key
     Q->>CC: onMessage(Message)
-    CC->>CC: deserialize RecordedMessage<br/>restoreSession()<br/>CommandContextHolder.set()
+    CC->>CC: deserialize RecordedMessage<br/>restoreSession()<br/>SalContext.setCommandContext()
     CC->>CH: handler.execute(command)
     CH-->>CC: result (ignored if null)
     Note over CC: SourceServiceId is blank<br/>→ no result sent
-    CC->>CC: SessionHolder.clear()<br/>SalMdc.clear()
+    CC->>CC: SalContext.clear()
 ```
 
 ---
@@ -227,7 +224,7 @@ sequenceDiagram
     A->>CE: executeCommandAsync(command)<br/>sourceServiceId = "AdapterA.Name"
     CE->>Q: route by commandTypeName
     Q->>CC: onMessage(Message)
-    CC->>CC: restoreSession()<br/>SalMdc.set(correlationId)
+    CC->>CC: restoreSession()<br/>SalContext.setCorrelationId(correlationId)
     CC->>CH: handler.execute(command)
     CH-->>CC: CommandResult
     CC->>RCE: publishResult(resultRm)<br/>routingKey = SourceServiceId
@@ -314,9 +311,7 @@ Spring Boot auto-configuration запускается в строго опред
 | **1** | `SalSerializationAutoConfiguration` | `wireObjectMapper` (PascalCase, C#-совместимый), `TypeMappingRegistry`, `SessionSerializer` |
 | **2** | `SalRabbitAutoConfiguration` | `SalMessageConverter`, `salRabbitTemplate` (с RetryTemplate), `RabbitAdmin`, `SalTopologyConfigurer` |
 | **3** | `CommandBusAutoConfiguration` + `EventBusAutoConfiguration` | `CommandHandlerRegistry`, `CommandPublisher`, `DefaultCommandBus`, `CommandTimeoutWatcher`, `DefaultEventBus` |
-| **4** | `WebAutoConfiguration` | `AdapterState`, `SalContextFilter`, `SessionFilter`, `RequestLoggingFilter`, `EnvironmentKeyInterceptor`, `OfflineCheckInterceptor`, `SalExceptionHandler` |
-| **5** | `WatchDogAutoConfiguration` | `EndPointRegistry`, `WatchDogService`, `SalRestClient`, `EndPointsAvailableScheduler`, `EndPointsRemoverScheduler`, `AdapterLifecycle`, `AdapterStateHealthIndicator` |
-| **6** | `CommandListenerAutoConfiguration` | `CommandConsumer`, `CommandResultConsumer`, `commandListenerContainer`, `commandResultListenerContainer`, `CommandListenerRegistrar` |
+| **4** | `CommandListenerAutoConfiguration` | `CommandConsumer`, `CommandResultConsumer`, `commandListenerContainer`, `commandResultListenerContainer`, `CommandListenerRegistrar` |
 
 **Важно**: RabbitMQ-слушатели (`CommandListenerContainer`) стартуют **не при старте контейнера**, а на событии `ApplicationReadyEvent` через `CommandListenerRegistrar`. Это гарантирует, что все handler-бины зарегистрированы и топология RabbitMQ объявлена до приёма первого сообщения.
 
@@ -324,10 +319,7 @@ Spring Boot auto-configuration запускается в строго опред
 graph LR
     P1[Phase 1<br/>Serialization] --> P2[Phase 2<br/>RabbitMQ]
     P2 --> P3[Phase 3<br/>Buses]
-    P3 --> P4[Phase 4<br/>Web]
-    P4 --> P5[Phase 5<br/>WatchDog]
-    P3 --> P6[Phase 6<br/>Listeners]
-    P5 --> P6
+    P3 --> P4[Phase 4<br/>Listeners]
 ```
 
 ---
@@ -336,34 +328,16 @@ graph LR
 
 ### ThreadLocal-модель
 
-SAL использует три ThreadLocal-хранилища:
+SAL использует единый ThreadLocal-фасад `SalContext`, объединяющий session, command context и MDC correlation id:
 
-| Класс | Содержимое | C# аналог |
-|-------|------------|-----------|
-| `SessionHolder` | `Map<String, Object>` — доменные данные сессии (SessionId, OperationId, и т.д.) | `CallContext.LogicalSetData("Session")` |
-| `CommandContextHolder` | `CommandContext` — тип команды, correlationId, sourceServiceId, timestamps | `CurrentCommand` |
-| `SalMdc` | SLF4J MDC: `correlationId`, `sessionId`, `adapterName` | logging context |
+| API | Содержимое | C# аналог |
+|-----|------------|-----------|
+| `SalContext.session()` / `SalContext.setSession(Map)` | `Map<String, Object>` — доменные данные сессии (SessionId, OperationId, и т.д.) | `CallContext.LogicalSetData("Session")` |
+| `SalContext.commandContext()` / `SalContext.setCommandContext(CommandContext)` | `CommandContext` — тип команды, correlationId, sourceServiceId, timestamps | `CurrentCommand` |
+| `SalContext.setCorrelationId(String)` | SLF4J MDC: единственный ключ `correlationId` (константа `SalContext.MDC_CORRELATION_ID`) | logging context |
+| `SalContext.clear()` | Очищает все три ThreadLocal-ячейки и MDC | — |
 
-### HTTP entry point
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant SCF as SalContextFilter<br/>(Order: HIGHEST_PRECEDENCE)
-    participant SF as SessionFilter<br/>(Order: +10)
-    participant Ctrl as Controller
-
-    Client->>SCF: HTTP Request<br/>TCB-Header-OperationId: {uuid}
-    SCF->>SCF: SalMdc.set(correlationId, sessionId, adapterName)
-    SCF->>SF: filterChain.doFilter()
-    SF->>SF: parse TCB.Header-Session header<br/>extract session bytes from body
-    SF->>SF: SessionHolder.set(session)
-    SF->>Ctrl: request (stripped of session bytes)
-    Ctrl-->>SF: response
-    SF->>SF: append session bytes to response body<br/>set TCB.Header-Session response header
-    SF->>SF: SessionHolder.clear()
-    SCF->>SCF: SalMdc.clear()
-```
+Отдельных MDC-ключей `sessionId`/`adapterName` больше нет — только `correlationId`.
 
 ### RabbitMQ entry point
 
@@ -375,19 +349,17 @@ sequenceDiagram
 
     RMQ->>CC: onMessage(Message)
     CC->>CC: deserialize RecordedMessage
-    CC->>CC: restoreSession(rm.additionalData["Session"])<br/>→ SessionHolder.set(session)
-    CC->>CC: SalMdc.set(correlationId, null, null)
-    CC->>CC: CommandContextHolder.set(commandContext)
+    CC->>CC: restoreSession(rm.additionalData[SESSION])<br/>→ SalContext.setSession(session)
+    CC->>CC: SalContext.setCorrelationId(correlationId)
+    CC->>CC: SalContext.setCommandContext(commandContext)
     CC->>CH: handler.execute(command)
     CH-->>CC: CommandResult
     CC->>CC: sendCompletedResult / sendFailedResult
-    Note over CC: finally-block:
-    CC->>CC: CommandContextHolder.clear()
-    CC->>CC: SessionHolder.clear()
-    CC->>CC: SalMdc.clear()
+    Note over CC: finally-block (sync path):
+    CC->>CC: SalContext.clear()
 ```
 
-**Async handler**: при использовании `CommandHandlerAsync` контекст (session, correlationId) **захватывается до** вызова `executeAsync()` и восстанавливается в `whenComplete()` callback, поскольку `finally`-блок основного потока выполняется раньше callback.
+**Async handler**: для `CommandHandlerAsync` `CommandConsumer` захватывает полный `ContextSnapshot` (session + `CommandContext` + correlationId) **до** вызова `executeAsync()` и восстанавливает его в `whenComplete()` callback. Внутренний флаг `asyncDispatched` удерживает вызывающий поток от очистки ThreadLocal-ов, пока async-обработчик ещё в полёте.
 
 ---
 

@@ -201,90 +201,27 @@ WantedBy=multi-user.target
 
 ## 4. Health и мониторинг
 
-### Actuator эндпоинты
+Адаптеры SAL — это non-web Spring Boot приложения. HTTP-эндпоинтов `/actuator/*` и `/ping` **нет**: health-observability строится на комбинации логов, состояния RabbitMQ-соединения и liveness процесса.
 
-| Эндпоинт                   | Описание                                                          |
-|----------------------------|-------------------------------------------------------------------|
-| `GET /actuator/health`     | Общий health-статус: disk, rabbit, adapterState                  |
-| `GET /actuator/health/adapterState` | Детальный статус адаптера                              |
-| `GET /ping`                | Простая проверка доступности (возвращает `200 OK`)               |
-| `GET /actuator/metrics`    | Метрики (Micrometer)                                              |
-| `GET /actuator/prometheus` | Метрики в формате Prometheus (если включено)                      |
+### Основные источники состояния
 
-Конфигурация в `application.yml`:
+| Источник | Что показывает |
+|---|---|
+| Логи (`stdout`/`journald`/docker logs) | Состояние адаптера, ошибки обработки команд, события Spring AMQP о подключении/переподключении к брокеру |
+| RabbitMQ Management UI / HTTP API | Глубина очередей `Command_*`, `{Adapter}_CommandResult`, `*_DeadLetter`; наличие connections от процесса адаптера |
+| Process supervisor (`systemd`, `docker ps`) | Liveness самого JVM-процесса |
 
-```yaml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-  endpoint:
-    health:
-      show-details: always
-      probes:
-        enabled: true
-```
-
-### Пример ответа `/actuator/health`
-
-```json
-{
-  "status": "UP",
-  "components": {
-    "adapterState": {
-      "status": "UP",
-      "details": {
-        "adapter": "my-adapter",
-        "online": true,
-        "shutdown": false,
-        "endpoints.total": 5,
-        "endpoints.available": 5
-      }
-    },
-    "rabbit": {
-      "status": "UP",
-      "details": {
-        "version": "3.12.0"
-      }
-    },
-    "diskSpace": {
-      "status": "UP"
-    }
-  }
-}
-```
-
-Когда адаптер находится в offline-состоянии:
-
-```json
-{
-  "status": "DOWN",
-  "components": {
-    "adapterState": {
-      "status": "DOWN",
-      "details": {
-        "adapter": "my-adapter",
-        "online": false,
-        "shutdown": false,
-        "endpoints.total": 5,
-        "endpoints.available": 2
-      }
-    }
-  }
-}
-```
+Ключевые классы для отладки: `CommandBus`, `CommandConsumer`, `CommandResultConsumer`, `DefaultCommandBus`, `SalRabbitAutoConfiguration` — установите у них уровень `DEBUG` при расследовании инцидентов.
 
 ### Рекомендуемые алерты
 
-| Условие                                         | Критичность | Действие                                                    |
-|-------------------------------------------------|-------------|-------------------------------------------------------------|
-| `adapterState.status == DOWN`                   | WARNING     | Проверить WatchDog-мониторы, доступность зависимых систем   |
-| `rabbit.status == DOWN`                         | CRITICAL    | Проверить доступность RabbitMQ-кластера                     |
-| Глубина `dead-letter-queue` > 100               | WARNING     | Проверить логи на ошибки обработки, анализировать DLQ       |
-| Глубина `dead-letter-queue` > 1000              | CRITICAL    | Немедленное расследование, потенциальная потеря сообщений   |
-| `endpoints.available < endpoints.total`         | WARNING     | Часть эндпоинтов недоступна, деградированный режим          |
-| HTTP 503 на `/ping`                             | CRITICAL    | Адаптер недоступен, перезапуск или escalation               |
+| Условие | Критичность | Действие |
+|---|---|---|
+| ERROR в логгере `ru.copperside.sal.starter.command.CommandBus` | WARNING | Проверить стек-трейсы, посмотреть DLQ |
+| События Spring AMQP о потере подключения (`ConnectionListener`) | CRITICAL | Проверить доступность RabbitMQ-кластера |
+| Глубина `dead-letter-queue` > 100 | WARNING | Проверить логи на ошибки обработки, анализировать DLQ |
+| Глубина `dead-letter-queue` > 1000 | CRITICAL | Немедленное расследование, потенциальная потеря сообщений |
+| Процесс адаптера не запущен (supervisor) | CRITICAL | Перезапуск / escalation |
 
 ---
 
@@ -292,24 +229,24 @@ management:
 
 ### MDC-поля
 
-Все запросы и обработка сообщений сопровождаются следующими MDC-ключами, устанавливаемыми через `SalMdc`:
+Все запросы и обработка сообщений сопровождаются единственным MDC-ключом, устанавливаемым через `SalContext.setCorrelationId(String)`:
 
 | MDC-ключ        | Описание                                                             |
 |-----------------|----------------------------------------------------------------------|
-| `correlationId` | Идентификатор запроса/команды для сквозной трассировки               |
-| `sessionId`     | Идентификатор сессии клиента                                         |
-| `adapterName`   | Имя адаптера (`sal.adapter.name`), фиксируется из конфигурации       |
+| `correlationId` | Идентификатор запроса/команды для сквозной трассировки (константа `SalContext.MDC_CORRELATION_ID`) |
+
+Прежних ключей `sessionId` и `adapterName` в MDC больше нет. Имя адаптера по-прежнему доступно в логах через `springProperty` из `sal.adapter.name`, но не через MDC.
 
 ### Пример строки лога (dev-профиль)
 
 ```
-2026-03-28 14:23:11.042 [sess-001:corr-abc123] INFO  CommandBus - Received command: MyCommand, queue=Command_MyCommand
+2026-04-10 14:23:11.042 [corr-abc123] INFO  CommandBus - Received command: MyCommand, queue=Command_MyCommand
 ```
 
 Формат паттерна:
 
 ```
-%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{sessionId:-no-sid}:%X{correlationId:-no-cid}] %-5level %logger{36} - %msg%n
+%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId:-no-cid}] %-5level %logger{36} - %msg%n
 ```
 
 ### Конфигурация logback-spring.xml
@@ -327,7 +264,7 @@ management:
     <springProfile name="default,dev">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
             <encoder>
-                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{sessionId:-no-sid}:%X{correlationId:-no-cid}] %-5level %logger{36} - %msg%n</pattern>
+                <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{correlationId:-no-cid}] %-5level %logger{36} - %msg%n</pattern>
                 <charset>UTF-8</charset>
             </encoder>
         </appender>
@@ -351,8 +288,6 @@ management:
                     <stackTrace>stackTrace</stackTrace>
                 </fieldNames>
                 <includeMdcKeyName>correlationId</includeMdcKeyName>
-                <includeMdcKeyName>sessionId</includeMdcKeyName>
-                <includeMdcKeyName>adapterName</includeMdcKeyName>
             </encoder>
         </appender>
 
@@ -364,7 +299,6 @@ management:
     <!-- Named loggers matching C# convention -->
     <logger name="CommandBus" level="INFO"/>
     <logger name="EventBus" level="INFO"/>
-    <logger name="WatchDog" level="INFO"/>
     <logger name="RabbitMQ" level="INFO"/>
 
 </configuration>
@@ -374,7 +308,7 @@ management:
 
 - Активируйте профиль `prod` (`-Dspring.profiles.active=prod`) — адаптер будет выводить логи в JSON-формате (Logstash-compatible).
 - Настройте Filebeat или Fluentd для сбора stdout/stderr контейнера.
-- В Kibana создайте фильтры по полям `adapterName`, `correlationId`, `sessionId` для фильтрации по конкретному адаптеру или запросу.
+- В Kibana создайте фильтры по полям `adapterName` (custom field из `springProperty`) и `correlationId` для фильтрации по конкретному адаптеру или запросу.
 - Индексируйте по полю `timestamp` (ISO-8601).
 - Рекомендуемый паттерн Logstash-фильтра: поле `correlationId` для JOIN между логами разных адаптеров в одной цепочке обработки.
 
@@ -443,27 +377,14 @@ management:
 kill -TERM <pid>
        |
        v
-1. AdapterLifecycle.stop()
-       |
-       +--> adapterState.setShutDown(true)
-       |    adapterState.setOnline(false)
-       |
-       v
-2. OfflineCheckInterceptor отклоняет новые HTTP-запросы
-   (возвращает 503 Service Unavailable)
-       |
-       v
-3. Spring AMQP завершает обработку in-flight сообщений
+1. Spring AMQP завершает обработку in-flight сообщений
    (drain period, по умолчанию 30s)
        |
        v
-4. RabbitMQ listener containers останавливаются
+2. RabbitMQ listener containers останавливаются
        |
        v
-5. Tomcat останавливается (graceful HTTP drain)
-       |
-       v
-6. JVM завершает работу
+3. JVM завершает работу
 ```
 
 Таймаут фазы shutdown управляется параметром:
@@ -485,27 +406,6 @@ systemctl stop my-adapter
 ```
 
 **Никогда не используйте `kill -9` (`SIGKILL`)** в production — это прервёт обработку in-flight сообщений, приведёт к их переpostановке в очередь и потенциальным дублирующим обработкам.
-
-### Проверка статуса shutdown через health
-
-После отправки SIGTERM и до полной остановки адаптер вернёт:
-
-```json
-{
-  "status": "DOWN",
-  "components": {
-    "adapterState": {
-      "status": "DOWN",
-      "details": {
-        "online": false,
-        "shutdown": true
-      }
-    }
-  }
-}
-```
-
-Поле `"shutdown": true` указывает, что идёт плановое завершение (а не аварийный offline).
 
 ---
 
@@ -543,53 +443,21 @@ sal:
 
 1. Используйте один и тот же `sal.adapter.name` для всех экземпляров.
 2. Не храните локальное состояние, критичное для завершения цепочки обработки.
-3. При использовании `sal.service.enable-offline-mode: true` каждый экземпляр независимо управляет своим offline-состоянием.
-4. Мониторьте consumer count в RabbitMQ — он должен равняться числу запущенных экземпляров умноженному на `sal.command.threads`.
+3. Мониторьте consumer count в RabbitMQ — он должен равняться числу запущенных экземпляров умноженному на `sal.command.threads`.
 
 ---
 
 ## 9. Ручное управление
 
-### Переключение online/offline через WatchDog
-
-`WatchDogService` поддерживает ручной переключатель (`manualOnlineSwitch`), позволяющий принудительно перевести адаптер в offline без его остановки.
-
-Если в адаптере реализован `SwitchController` (опциональный контроллер), доступен HTTP API:
-
-```http
-POST /switch/toggle
-```
-
-Ответ:
-
-```json
-{
-  "manualOnline": false
-}
-```
-
-При `manualOnline: false`:
-- Метод `WatchDogService.signalHealthy()` игнорируется — адаптер не перейдёт в online, даже если все WatchDog-мониторы пройдут.
-- Адаптер принудительно переходит в offline (`signalUnhealthy("manual switch")`).
-- HTTP-запросы к бизнес-эндпоинтам будут отклонены с кодом `503`.
-
-Для возврата в online повторите вызов — переключатель инвертируется:
-
-```http
-POST /switch/toggle
-# -> { "manualOnline": true }
-```
-
-После этого WatchDog-мониторы при следующем успешном проходе автоматически переведут адаптер обратно в online.
-
 ### Проверка состояния
 
 ```bash
-# Текущий статус адаптера
-curl -s http://localhost:8080/actuator/health/adapterState | jq .
+# Логи адаптера (docker / systemd)
+docker logs -f my-adapter
+journalctl -u sal-my-adapter -f
 
-# Простая проверка доступности
-curl -s http://localhost:8080/ping
+# Состояние очередей и подключений в RabbitMQ Management UI:
+# http://rabbitmq.internal:15672 → Queues / Connections
 ```
 
 ---
@@ -599,5 +467,5 @@ curl -s http://localhost:8080/ping
 - [configuration-reference.md](./configuration-reference.md) — полный справочник по `sal.*` параметрам конфигурации.
 - [troubleshooting.md](./troubleshooting.md) — диагностика частых проблем: очереди не создаются, адаптер не переходит в online, потеря сообщений.
 - [architecture.md](./architecture.md) — архитектурный обзор: модули, диаграммы, принятые решения (ADR).
-- [glossary.md](./glossary.md) — терминология: адаптер, эндпоинт, WatchDog, командная шина, DLQ и др.
+- [glossary.md](./glossary.md) — терминология: адаптер, командная шина, DLQ и др.
 - [wire-protocol.md](./wire-protocol.md) — полная спецификация протокола обмена сообщениями через RabbitMQ.

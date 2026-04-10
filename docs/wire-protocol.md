@@ -264,56 +264,15 @@ static int read7BitEncodedInt(InputStream in) throws IOException {
 
 ---
 
-## 5. Передача сессии по HTTP
+## 5. Передача сессии
 
-Сессия вставляется непосредственно в тело HTTP-запроса/ответа. Это поведение реализует `SessionFilter` на стороне Java, повторяя логику C# `SessionDataMiddleware`.
+В текущей версии SAL сессия транспортируется **исключительно через AMQP** — в поле `RecordedMessage.additionalData` по ключу `MessageDataKeys.SESSION` (строковое значение `"Session"`). HTTP-слой в стартере отсутствует: SAL-адаптеры больше не являются web-приложениями.
 
-### Заголовок
+### Формат значения в `additionalData[SESSION]`
 
-```
-TCB.Header-Session: {bodyOffset};{sessionLength}
-```
+Значение — это результат `SessionSerializer.serialize(Map<String, Object>)`: Base64-строка от raw DEFLATE-сжатых байтов сессии (см. раздел 4). На приёмной стороне `CommandConsumer`/`EventConsumer` читают это поле и восстанавливают `Map` через `SalContext.setSession(Map)` до вызова хендлера.
 
-- `bodyOffset` — длина полезной нагрузки в байтах (до сессии).
-- `sessionLength` — длина сессионных данных в байтах.
-
-### Тело запроса
-
-```
-[payload bytes: 0 .. bodyOffset]
-[session bytes: bodyOffset .. bodyOffset+sessionLength]
-```
-
-Сессионные байты — это строка Base64 (результат `SessionSerializer.serialize()`), закодированная в UTF-8.
-
-### Тело ответа
-
-Аналогично запросу:
-```
-[response payload bytes]
-[session bytes]
-```
-
-Заголовок ответа:
-```
-TCB.Header-Session: {responseBodyLen};{sessionLen}
-```
-
-### Пример
-
-Запрос с телом `{"op":"pay"}` (11 байт) и сессией `eJyrViq...` (32 байта):
-
-```
-Headers:
-  TCB.Header-Session: 11;32
-  Content-Length: 43
-
-Body (hex, conceptual):
-  7b226f70223a22706179227d  ← payload JSON (11 bytes)
-  654a797256...             ← Base64 session string (32 bytes)
-```
-
-### Прочие HTTP-заголовки SAL
+### Прочие wire-заголовки SAL (константы `Headers`)
 
 | Заголовок | Константа | Назначение |
 |---|---|---|
@@ -617,7 +576,6 @@ Additional-Data: (JSON bytes) {"SourceServiceId":"payment-adapter"}
 - [`SalSerializationAutoConfiguration`](../sal-spring-boot-starter/src/main/java/ru/copperside/sal/starter/serialization/SalSerializationAutoConfiguration.java) — настройка `wireObjectMapper`.
 - [`TypeMappingRegistry`](../sal-spring-boot-starter/src/main/java/ru/copperside/sal/starter/serialization/TypeMappingRegistry.java) — реестр маппинга типов C#/Java.
 - [`SessionSerializer`](../sal-spring-boot-starter/src/main/java/ru/copperside/sal/starter/session/SessionSerializer.java) — сжатие/распаковка сессии.
-- [`SessionFilter`](../sal-spring-boot-starter/src/main/java/ru/copperside/sal/starter/web/SessionFilter.java) — HTTP-фильтр для сессии.
 - [`RecordedMessage`](../sal-api/src/main/java/ru/copperside/sal/api/message/RecordedMessage.java) — wire-обёртка сообщения.
 - [`FailedResult`](../sal-api/src/main/java/ru/copperside/sal/api/command/FailedResult.java) — результат с ошибкой.
 - [`SalErrorCodes`](../sal-api/src/main/java/ru/copperside/sal/api/exception/SalErrorCodes.java) — коды ошибок.

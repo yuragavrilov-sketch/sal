@@ -31,13 +31,10 @@
 
 | Свойство | Тип | Default | Описание | C# эквивалент |
 |---|---|---|---|---|
-| `sal.service.environment-key` | `String` | `""` | Ключ среды для HTTP-валидации входящих запросов. Пустая строка — валидация отключена. | `Service.EnvironmentKey` |
-| `sal.service.enable-offline-mode` | `boolean` | `false` | Разрешить приём HTTP-запросов, когда адаптер находится в offline-состоянии. | `Service.EnableOfflineMode` |
+| `sal.service.environment-key` | `String` | `""` | Общий секрет среды. После удаления web-слоя стартер это значение нигде не проверяет; свойство сохранено для совместимости конфигов. | `Service.EnvironmentKey` |
+| `sal.service.enable-offline-mode` | `boolean` | `false` | Legacy-флаг. Механизма online/offline и HTTP-эндпоинтов в SAL больше нет; свойство сохранено для обратной совместимости. | `Service.EnableOfflineMode` |
 | `sal.service.mb-mode` | `boolean` | `false` | Режим message bus (зарезервирован для будущего использования). | `Service.MBMode` |
 | `sal.service.sal-version` | `int` | `1` | Версия SAL-протокола данного адаптера. | `Service.SalVersion` |
-| `sal.service.min-ep-sal-version` | `int` | `0` | Минимальная допустимая версия SAL endpoint'а при подключении. | `Service.MinEpSalVersion` |
-| `sal.service.max-ep-sal-version` | `int` | `2147483647` | Максимальная допустимая версия SAL endpoint'а при подключении (`Integer.MAX_VALUE`). | `Service.MaxEpSalVersion` |
-| `sal.service.adapter-dependency` | `String[]` | `[]` | Список имён адаптеров, от которых зависит данный. Адаптер не перейдёт в online до появления всех зависимостей. | `Service.AdapterDependency` |
 | `sal.service.data-path` | `String` | `null` | Путь к директории данных адаптера. | `Service.DataPath` |
 | `sal.service.disk-store-path` | `String` | `null` | Путь к директории disk store (постоянное хранилище состояния). | `Service.DiskStorePath` |
 
@@ -60,13 +57,6 @@
 | Свойство | Тип | Default | Описание | C# эквивалент |
 |---|---|---|---|---|
 | `sal.event.threads` | `int` | `1` | Количество consumer-потоков для обработки входящих событий из RabbitMQ. | `EventProcessor.ThreadCount` |
-
-### 1.6 `sal.watchdog.*` — планировщик WatchDog
-
-| Свойство | Тип | Default | Описание | C# эквивалент |
-|---|---|---|---|---|
-| `sal.watchdog.ping-interval-ms` | `long` | `10000` | Интервал периодической проверки (ping) зарегистрированных endpoint'ов в миллисекундах. | Custom |
-| `sal.watchdog.remover-interval-ms` | `long` | `60000` | Интервал очистки устаревших/недоступных endpoint'ов в миллисекундах. | Custom |
 
 ---
 
@@ -97,10 +87,8 @@ SAL использует RabbitMQ для обмена командами и со
 
 | Свойство | Тип | Default | Описание |
 |---|---|---|---|
-| `server.port` | `int` | `8080` | HTTP-порт, на котором адаптер принимает входящие запросы. |
-| `server.shutdown` | `String` | `immediate` | Стратегия остановки сервера. Рекомендуемое значение: `graceful` — дожидается завершения текущих запросов. |
-| `spring.lifecycle.timeout-per-shutdown-phase` | `Duration` | `30s` | Максимальное время ожидания завершения каждой фазы graceful shutdown. Пример: `30s`. Требует `server.shutdown: graceful`. |
-| `management.endpoints.web.exposure.include` | `String` | `health,info` | Список Actuator endpoints, доступных через HTTP. Рекомендуемое значение: `health,info,prometheus,metrics`. |
+| `spring.main.web-application-type` | `String` | `none` (ожидаемое значение для SAL-адаптеров) | Адаптер запускается без встроенного веб-сервера. HTTP-слоя, Actuator и CORS в стартере нет. |
+| `spring.lifecycle.timeout-per-shutdown-phase` | `Duration` | `30s` | Максимальное время ожидания завершения каждой фазы graceful shutdown. Пример: `30s`. |
 
 ---
 
@@ -120,9 +108,6 @@ Spring Boot поддерживает [relaxed binding](https://docs.spring.io/sp
 | `sal.service.enable-offline-mode` | `SAL_SERVICE_ENABLE_OFFLINE_MODE` |
 | `sal.service.mb-mode` | `SAL_SERVICE_MB_MODE` |
 | `sal.service.sal-version` | `SAL_SERVICE_SAL_VERSION` |
-| `sal.service.min-ep-sal-version` | `SAL_SERVICE_MIN_EP_SAL_VERSION` |
-| `sal.service.max-ep-sal-version` | `SAL_SERVICE_MAX_EP_SAL_VERSION` |
-| `sal.service.adapter-dependency` | `SAL_SERVICE_ADAPTER_DEPENDENCY` |
 | `sal.service.data-path` | `SAL_SERVICE_DATA_PATH` |
 | `sal.service.disk-store-path` | `SAL_SERVICE_DISK_STORE_PATH` |
 | `sal.client.request-timeout` | `SAL_CLIENT_REQUEST_TIMEOUT` |
@@ -130,8 +115,6 @@ Spring Boot поддерживает [relaxed binding](https://docs.spring.io/sp
 | `sal.command.threads` | `SAL_COMMAND_THREADS` |
 | `sal.command.result-threads` | `SAL_COMMAND_RESULT_THREADS` |
 | `sal.event.threads` | `SAL_EVENT_THREADS` |
-| `sal.watchdog.ping-interval-ms` | `SAL_WATCHDOG_PING_INTERVAL_MS` |
-| `sal.watchdog.remover-interval-ms` | `SAL_WATCHDOG_REMOVER_INTERVAL_MS` |
 
 ### RabbitMQ и инфраструктура
 
@@ -142,7 +125,6 @@ Spring Boot поддерживает [relaxed binding](https://docs.spring.io/sp
 | `spring.rabbitmq.virtual-host` | `SPRING_RABBITMQ_VIRTUAL_HOST` |
 | `spring.rabbitmq.username` | `SPRING_RABBITMQ_USERNAME` |
 | `spring.rabbitmq.password` | `SPRING_RABBITMQ_PASSWORD` |
-| `server.port` | `SERVER_PORT` |
 
 ---
 
@@ -159,6 +141,8 @@ sal:
     type: MyAdapter
 
 spring:
+  main:
+    web-application-type: none
   rabbitmq:
     host: localhost
     port: 5672
@@ -198,13 +182,6 @@ sal:
     mb-mode: false
     # Версия SAL-протокола данного адаптера
     sal-version: 1
-    # Диапазон допустимых версий SAL endpoint'ов при подключении
-    min-ep-sal-version: 1
-    max-ep-sal-version: 2147483647
-    # Зависимости: адаптер ждёт появления перечисленных адаптеров перед переходом в online
-    adapter-dependency:
-      - core-adapter
-      - auth-adapter
     # Пути к файловым ресурсам (опционально)
     data-path: /var/data/my-adapter
     disk-store-path: /var/data/my-adapter/store
@@ -234,15 +211,6 @@ sal:
     # Consumer-потоки для входящих событий
     threads: 4
 
-  # ---------------------------------------------------------------------------
-  # WatchDog — мониторинг endpoint'ов
-  # ---------------------------------------------------------------------------
-  watchdog:
-    # Интервал ping-проверки зарегистрированных endpoint'ов (мс)
-    ping-interval-ms: 15000
-    # Интервал очистки устаревших endpoint'ов (мс)
-    remover-interval-ms: 120000
-
 # =============================================================================
 # Spring Boot
 # =============================================================================
@@ -250,6 +218,12 @@ spring:
   application:
     # Имя приложения берётся из имени адаптера
     name: ${sal.adapter.name}
+
+  # ---------------------------------------------------------------------------
+  # Non-web Spring Boot приложение: веб-сервер, CORS и Actuator не поднимаются
+  # ---------------------------------------------------------------------------
+  main:
+    web-application-type: none
 
   # ---------------------------------------------------------------------------
   # RabbitMQ — пароль задавать через переменную окружения SPRING_RABBITMQ_PASSWORD
@@ -262,33 +236,10 @@ spring:
     password: ${RABBITMQ_PASSWORD}
 
   # ---------------------------------------------------------------------------
-  # Graceful shutdown: дожидаться завершения текущих запросов
+  # Graceful shutdown: дожидаться завершения обработки текущих команд
   # ---------------------------------------------------------------------------
   lifecycle:
     timeout-per-shutdown-phase: 30s
-
-# =============================================================================
-# HTTP-сервер
-# =============================================================================
-server:
-  port: 8080
-  # graceful: сервер перестаёт принимать новые запросы и ждёт завершения текущих
-  shutdown: graceful
-
-# =============================================================================
-# Actuator — метрики и health checks
-# =============================================================================
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-  endpoint:
-    health:
-      show-details: always
-      probes:
-        # Liveness и Readiness probes для Kubernetes
-        enabled: true
 ```
 
 ---
@@ -297,4 +248,4 @@ management:
 
 - [operations-guide.md](operations-guide.md) — развёртывание, мониторинг, graceful shutdown
 - [adapter-development-guide.md](adapter-development-guide.md) — разработка адаптера на Spring Boot
-- [glossary.md](glossary.md) — термины SAL: endpoint, adapter, command, event, WatchDog
+- [glossary.md](glossary.md) — термины SAL: adapter, command, event

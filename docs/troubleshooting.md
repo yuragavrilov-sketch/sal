@@ -12,7 +12,7 @@
 2. [Проблемы доставки команд](#2-проблемы-доставки-команд)
 3. [Проблемы результатов команд](#3-проблемы-результатов-команд)
 4. [Проблемы сессии](#4-проблемы-сессии)
-5. [Проблемы WatchDog и online/offline](#5-проблемы-watchdog-и-onlineoffline)
+5. [Health и observability](#5-health-и-observability)
 6. [Проблемы C#/Java interop](#6-проблемы-cjava-interop)
 7. [Диагностические инструменты](#7-диагностические-инструменты)
 8. [См. также](#8-см-также)
@@ -337,13 +337,13 @@ public MyResult handle(MyCommand command) { ... }
 
 ## 4. Проблемы сессии
 
-### 4.1 `SessionHolder.get() == null` внутри хендлера
+### 4.1 `SalContext.session() == null` внутри хендлера
 
 **Симптомы**
 
 ```java
-Session session = SessionHolder.get(); // null
-// NullPointerException при обращении к session.getUserId() и т.д.
+Map<String, Object> session = SalContext.session(); // null
+// NullPointerException при обращении к session.get("UserId") и т.д.
 ```
 
 **Причина**
@@ -356,8 +356,8 @@ Session session = SessionHolder.get(); // null
 
 ```java
 // Сессия должна быть установлена до отправки:
-SessionHolder.set(session);
-commandBus.send(command);
+SalContext.setSession(session);
+commandBus.publishCommand(command, correlationId, CommandPriority.NORMAL);
 ```
 
 При отладке вручную через RabbitMQ API передавайте `AdditionalData` в заголовках сообщения (см. раздел 7).
@@ -368,119 +368,60 @@ commandBus.send(command);
 
 **Симптомы**
 
-`SessionHolder.get()` возвращает `null` или устаревшую сессию внутри `CompletableFuture`, `@Async`-метода или лямбды, выполняемой в другом потоке.
+`SalContext.session()` возвращает `null` или устаревшую сессию внутри `CompletableFuture`, `@Async`-метода или лямбды, выполняемой в другом потоке.
 
 **Причина**
 
-`SessionHolder` использует `ThreadLocal`. При переключении потока контекст сессии не передаётся автоматически.
+`SalContext` использует `ThreadLocal` для session, command context и MDC correlationId. При переключении потока контекст не передаётся автоматически.
 
 **Решение**
 
-Захватите сессию явно перед переключением потока и восстановите её внутри асинхронного блока:
+Захватите сессию (и при необходимости correlationId) явно перед переключением потока и восстановите внутри асинхронного блока:
 
 ```java
-Session capturedSession = SessionHolder.get(); // захват в текущем потоке
+Map<String, Object> capturedSession = SalContext.session(); // захват в текущем потоке
+CommandContext capturedCommand = SalContext.commandContext();
 
 CompletableFuture.runAsync(() -> {
-    SessionHolder.set(capturedSession); // восстановление в новом потоке
+    if (capturedSession != null) SalContext.setSession(capturedSession);
+    if (capturedCommand != null) {
+        SalContext.setCommandContext(capturedCommand);
+        SalContext.setCorrelationId(capturedCommand.getCorrelationId());
+    }
     try {
         // ваш асинхронный код
     } finally {
-        SessionHolder.clear(); // очистка после завершения
+        SalContext.clear(); // очистка после завершения
     }
 });
 ```
 
-Убедитесь, что используется актуальная версия `CommandConsumer`, поддерживающая паттерн захвата контекста.
+`CommandConsumer` применяет тот же паттерн через внутренний `ContextSnapshot` record, так что для async-хендлеров команд захват уже сделан фреймворком.
 
 ---
 
-## 5. Проблемы WatchDog и online/offline
+## 5. Health и observability
 
-### 5.1 Адаптер не переходит в статус ONLINE
+### 5.1 Как понять, жив ли адаптер
 
-**Симптомы**
+HTTP-эндпоинтов `/actuator/health`, `/ping`, `/actuator/adapter/*` в SAL **больше нет**. Механизма online/offline и inter-adapter healthcheck тоже нет: адаптеры предполагают, что пиры доступны через RabbitMQ.
 
-```
-GET /actuator/health  →  {"status": "OUT_OF_SERVICE", "adapter": "OFFLINE"}
-```
+**Где смотреть состояние:**
 
-Адаптер запущен, RabbitMQ подключён, но WatchDog не переводит его в ONLINE.
+- Логи адаптера (`docker logs <adapter>`, `journalctl -u sal-<adapter>`). Смотрите уровень логгеров `ru.copperside.sal.starter.command.*` и `org.springframework.amqp.*`.
+- RabbitMQ Management UI (`http://rabbitmq.internal:15672`): вкладка **Connections** покажет, висит ли соединение от процесса адаптера; вкладка **Queues** — глубину `Command_*`, `*_CommandResult`, `*_DeadLetter`.
+- Supervisor процесса (`systemd`, `docker ps`, `kubectl get pods`) — liveness JVM.
 
-**Причина**
-
-Один или несколько зависимых endpoints, указанных в `sal.service.adapter-dependency`, недоступны.
-
-**Решение**
-
-Проверьте список зависимостей в конфигурации:
-
-```yaml
-sal:
-  service:
-    adapter-dependency:
-      - name: OtherAdapter
-        url: http://other-adapter:8080/ping
-```
-
-Убедитесь, что все зависимые сервисы отвечают на healthcheck. Вызовите каждый из них вручную:
+**Типовая диагностика:**
 
 ```bash
-curl http://other-adapter:8080/ping
-```
+# Логи ошибок CommandBus
+docker logs my-adapter 2>&1 | grep -E "ERROR|WARN" | tail -50
 
----
-
-### 5.2 Все HTTP-запросы отклоняются с `AdapterIsOffline`
-
-**Симптомы**
-
-```json
-{"error": "AdapterIsOffline", "message": "Adapter is currently offline"}
-```
-
-Все входящие HTTP-запросы возвращают ошибку, хотя адаптер физически работает.
-
-**Причина**
-
-Параметр `enable-offline-mode: false` при этом адаптер находится в статусе OFFLINE. Фреймворк блокирует все запросы до перехода в ONLINE.
-
-**Решение**
-
-**Вариант 1** — включить offline-режим (разрешить работу в деградированном состоянии):
-
-```yaml
-sal:
-  service:
-    enable-offline-mode: true
-```
-
-**Вариант 2** — устранить причину перехода в OFFLINE (см. п. 5.1).
-
----
-
-### 5.3 Ручное отключение адаптера
-
-**Симптомы**
-
-Адаптер находится в статусе OFFLINE после ручного переключения. `WatchDogService.isManualOnline()` возвращает `false`.
-
-**Причина**
-
-Администратор вызвал endpoint для ручного отключения адаптера.
-
-**Решение**
-
-Вызовите toggle-endpoint для повторного включения:
-
-```bash
-curl -X POST http://localhost:8080/actuator/adapter/toggle-online
-```
-
-Или используйте соответствующий метод `WatchDogService` программно:
-
-```java
-watchDogService.setManualOnline(true);
+# Глубина DLQ через RabbitMQ HTTP API
+curl -s -u guest:guest \
+  "http://rabbitmq.internal:15672/api/queues/dev/Command_EchoCommand_DeadLetter" \
+  | jq '{messages, consumers}'
 ```
 
 ---
@@ -565,8 +506,8 @@ C# использует формат сериализации строк с 7-bi
 | Инструмент | Что проверять |
 |------------|---------------|
 | **RabbitMQ Management UI** `http://localhost:15672` | Exchanges, очереди, bindings, message rates, содержимое сообщений |
-| **GET /actuator/health** | Статус адаптера (ONLINE/OFFLINE), соединение с RabbitMQ, состояние зависимых endpoints |
-| **GET /ping** | SAL-совместимый healthcheck; используется WatchDog зависимых адаптеров |
+| **Логи адаптера** (`docker logs`, `journalctl`) | ERROR/WARN из `ru.copperside.sal.starter.command.*`, события подключения Spring AMQP |
+| **RabbitMQ HTTP API** (`/api/queues/...`) | Глубина очередей и DLQ, список consumers |
 | **MDC в логах** | `correlationId` для трассировки запроса между адаптерами |
 | **curl + RabbitMQ HTTP API** | Ручная отправка сообщений для отладки конкретного хендлера |
 
