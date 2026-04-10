@@ -174,7 +174,10 @@ public class CommandConsumer implements MessageListener {
         resultRm.setPayload(payload);
         resultRm.setPayloadType(payload.getClass().getName());
         resultRm.setExchangeName(exchange);
-        resultRm.setRoutingKey(incomingRm.getSourceServiceId());
+        // SAL convention: result routing key = "<SourceServiceId>_CommandResult"
+        // (matches the requester's result queue name).
+        resultRm.setRoutingKey(incomingRm.getSourceServiceId()
+                + SalRabbitConstants.COMMAND_RESULT_QUEUE_SUFFIX);
         resultRm.setTimeStamp(Instant.now());
         return resultRm;
     }

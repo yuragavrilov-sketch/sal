@@ -108,10 +108,13 @@ public class CommandListenerRegistrar {
                 .build();
         rabbitAdmin.declareQueue(queue);
 
+        // Result routing key convention in the SAL C# ecosystem: queue name itself,
+        // i.e. "<SourceServiceId>_CommandResult". Targets append "_CommandResult" to
+        // the SourceServiceId they read off the command when publishing the reply.
         rabbitAdmin.declareBinding(
-                BindingBuilder.bind(queue).to(completedExchange).with(adapterFullName));
+                BindingBuilder.bind(queue).to(completedExchange).with(queueName));
         rabbitAdmin.declareBinding(
-                BindingBuilder.bind(queue).to(failedExchange).with(adapterFullName));
+                BindingBuilder.bind(queue).to(failedExchange).with(queueName));
 
         log.info("[BUS] Declared result queue '{}' for adapter '{}'", queueName, adapterFullName);
         return queueName;
