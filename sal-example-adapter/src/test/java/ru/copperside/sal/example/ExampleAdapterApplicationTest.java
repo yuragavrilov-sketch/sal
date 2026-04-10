@@ -5,13 +5,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import ru.copperside.sal.api.command.CommandBus;
 
-@SpringBootTest(properties = {
-        "spring.autoconfigure.exclude=" +
-                "org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration," +
-                "ru.copperside.sal.starter.rabbitmq.SalRabbitAutoConfiguration," +
-                "ru.copperside.sal.starter.command.CommandBusAutoConfiguration," +
-                "ru.copperside.sal.starter.command.CommandListenerAutoConfiguration"
-})
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.NONE,
+        properties = {
+                "sal.example.echo-runner.enabled=false",
+                "spring.main.web-application-type=none",
+                "spring.lifecycle.timeout-per-shutdown-phase=1s",
+                "spring.autoconfigure.exclude=" +
+                        "org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration," +
+                        "ru.copperside.sal.starter.rabbitmq.SalRabbitAutoConfiguration," +
+                        "ru.copperside.sal.starter.command.CommandBusAutoConfiguration," +
+                        "ru.copperside.sal.starter.command.CommandListenerAutoConfiguration"
+        })
 class ExampleAdapterApplicationTest {
 
     @MockitoBean

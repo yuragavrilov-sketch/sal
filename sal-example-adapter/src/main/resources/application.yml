@@ -9,9 +9,6 @@ sal:
   service:
     environment-key: ""
     sal-version: 1
-  client:
-    request-timeout: 120
-    service-request-timeout: 10
   command:
     threads: 10
     result-threads: 10
@@ -19,6 +16,8 @@ sal:
 spring:
   application:
     name: ${sal.adapter.name}
+  main:
+    web-application-type: none
   rabbitmq:
     host: localhost
     port: 5672
@@ -27,18 +26,3 @@ spring:
     password: guest
   lifecycle:
     timeout-per-shutdown-phase: 30s
-
-server:
-  port: 8080
-  shutdown: graceful
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,prometheus,metrics
-  endpoint:
-    health:
-      show-details: always
-      probes:
-        enabled: true
