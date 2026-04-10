@@ -65,22 +65,6 @@ public class CommandPublisher {
     }
 
     /**
-     * Publish a pre-built RecordedMessage as a command.
-     */
-    public void publish(RecordedMessage rm, String commandName) {
-        enrichMessage(rm);
-        rm.getAdditionalData().put(MessageDataKeys.IS_COMMAND, "");
-        rm.setExchangeName(SalRabbitConstants.COMMAND_EXCHANGE);
-        rm.setRoutingKey(commandName);
-        if (rm.getPayloadType() == null) rm.setPayloadType(commandName);
-
-        salRabbitTemplate.convertAndSend(
-                SalRabbitConstants.COMMAND_EXCHANGE,
-                commandName,
-                rm);
-    }
-
-    /**
      * Publish a command result back to the sender adapter.
      */
     public void publishResult(RecordedMessage rm) {

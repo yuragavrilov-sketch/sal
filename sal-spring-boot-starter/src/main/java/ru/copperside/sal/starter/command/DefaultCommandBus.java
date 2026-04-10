@@ -1,9 +1,10 @@
 package ru.copperside.sal.starter.command;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import ru.copperside.sal.api.command.*;
-import ru.copperside.sal.api.message.RecordedMessage;
+import ru.copperside.sal.api.command.Command;
+import ru.copperside.sal.api.command.CommandBus;
+import ru.copperside.sal.api.command.CommandPriority;
+import ru.copperside.sal.api.command.CommandResult;
+import ru.copperside.sal.api.command.HaveResult;
 import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 
 import java.time.Instant;
@@ -13,13 +14,9 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * Default {@link CommandBus} implementation — facade over CommandPublisher.
- * <p>
- * Replaces C# {@code CommandProxy} public API surface.
- * Manages pending commands for request/reply pattern (ExecuteCommandAsync).
+ * Manages pending commands for request/reply pattern (executeCommandAsync).
  */
 public class DefaultCommandBus implements CommandBus {
-
-    private static final Logger log = LoggerFactory.getLogger("CommandBus");
 
     private final CommandPublisher publisher;
     private final TypeMappingRegistry typeMappingRegistry;
@@ -34,22 +31,6 @@ public class DefaultCommandBus implements CommandBus {
     public String publishCommand(Command command, String correlationId, CommandPriority priority) {
         String commandTypeName = resolveTypeName(command.getClass());
         return publisher.publish(command, commandTypeName, correlationId, priority, null);
-    }
-
-    @Override
-    public void publishCommand(RecordedMessage recordMessage, String commandName) {
-        publisher.publish(recordMessage, commandName);
-    }
-
-    @Override
-    public void publishCommandResult(CommandResult result, String contextData) {
-        // Implemented at the consumer level — result is sent back directly
-        throw new UnsupportedOperationException("Use CommandConsumer to send results");
-    }
-
-    @Override
-    public void publishCommandResult(RecordedMessage result, String contextData) {
-        publisher.publishResult(result);
     }
 
     @Override
