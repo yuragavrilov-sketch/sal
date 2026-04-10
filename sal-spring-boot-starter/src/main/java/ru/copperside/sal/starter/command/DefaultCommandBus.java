@@ -50,13 +50,18 @@ public class DefaultCommandBus implements CommandBus {
     private CompletableFuture<Object> dispatch(String commandTypeName, Object payload,
                                                int timeoutSeconds, CommandPriority priority) {
         String correlationId = java.util.UUID.randomUUID().toString();
-        Instant expireDate = Instant.now().plusSeconds(timeoutSeconds);
+        Instant clientExpireDate = Instant.now().plusSeconds(timeoutSeconds);
 
         CompletableFuture<Object> future = new CompletableFuture<>();
-        pendingCommands.put(correlationId, new PendingCommand(correlationId, expireDate, future));
+        pendingCommands.put(correlationId, new PendingCommand(correlationId, clientExpireDate, future));
 
         try {
-            publisher.publish(payload, commandTypeName, correlationId, priority, expireDate);
+            // Don't propagate expireDate on the wire: C# targets using Newtonsoft.Json
+            // with default settings deserialize the "Z"-suffixed UTC string as a
+            // timezone-naive DateTime and then compare it to local DateTime.Now,
+            // which treats every cross-timezone message as already expired.
+            // The client-side CommandTimeoutWatcher enforces the timeout locally.
+            publisher.publish(payload, commandTypeName, correlationId, priority, null);
         } catch (Exception e) {
             pendingCommands.remove(correlationId);
             future.completeExceptionally(e);
