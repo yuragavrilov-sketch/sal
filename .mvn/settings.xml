@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Project-local Maven settings. Picked up automatically via .mvn/maven.config
+  (-s .mvn/settings.xml). Commit this file so everyone on the team uses the
+  same Nexus mirror without touching their global ~/.m2/settings.xml.
+
+  If you need credentials for Nexus, DO NOT put them here. Add a <server>
+  block with the same id ("local-nexus") to your personal ~/.m2/settings.xml,
+  where passwords stay out of git.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+  <mirrors>
+    <mirror>
+      <id>local-nexus</id>
+      <name>Local Nexus (maven-public)</name>
+      <url>http://localhost:8081/repository/maven-public/</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+
+</settings>
