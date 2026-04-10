@@ -64,9 +64,11 @@ public class CommandConsumer implements MessageListener {
         }
 
         restoreSession(rm);
-        SalContext.setMdc(rm.getCorrelationId(), null, null);
-        SalContext.setCommandContext(buildCommandContext(rm, commandTypeName));
+        SalContext.setCorrelationId(rm.getCorrelationId());
+        CommandContext ctx = buildCommandContext(rm, commandTypeName);
+        SalContext.setCommandContext(ctx);
 
+        boolean asyncDispatched = false;
         try {
             Object handler = handlerRegistry.resolveHandler(commandTypeName);
             if (handler == null) {
@@ -78,25 +80,24 @@ public class CommandConsumer implements MessageListener {
             log.debug("[BUS] Dispatching '{}' correlationId={}", commandTypeName, rm.getCorrelationId());
 
             Object payload = rm.getPayload();
-            CompletableFuture<? extends CommandResult> resultFuture;
 
             if (handler instanceof CommandHandlerAsync asyncHandler) {
-                // Capture context before async execution — ThreadLocals will be
-                // cleared in the finally block of the calling thread, so the
-                // whenComplete callback running in another thread would see nulls.
-                Map<String, Object> capturedSession = SalContext.session();
-                String capturedCorrelationId = rm.getCorrelationId();
+                // Capture full context before async execution — the calling
+                // thread's finally block will clear ThreadLocals before the
+                // whenComplete callback runs on another thread.
+                ContextSnapshot snapshot = new ContextSnapshot(
+                        SalContext.session(), ctx, rm.getCorrelationId());
 
-                resultFuture = asyncHandler.executeAsync((Command) payload);
+                CompletableFuture<? extends CommandResult> resultFuture =
+                        asyncHandler.executeAsync((Command) payload);
+                asyncDispatched = true;
 
                 resultFuture.whenComplete((result, ex) -> {
-                    // Restore context in the callback thread
-                    if (capturedSession != null) SalContext.setSession(capturedSession);
-                    SalContext.setMdc(capturedCorrelationId, null, null);
+                    snapshot.restore();
                     try {
                         if (ex != null) {
                             log.error("[BUS] '{}' failed correlationId={}",
-                                    commandTypeName, capturedCorrelationId, ex);
+                                    commandTypeName, snapshot.correlationId, ex);
                             sendFailedResult(rm, ex.getMessage());
                         } else if (result != null) {
                             sendCompletedResult(rm, result);
@@ -115,7 +116,6 @@ public class CommandConsumer implements MessageListener {
                 log.error("[BUS] Unknown handler type {} for '{}'",
                         handler.getClass().getName(), commandTypeName);
                 sendFailedResult(rm, "Unknown handler type: " + handler.getClass().getName());
-                return;
             }
 
         } catch (Exception e) {
@@ -123,7 +123,23 @@ public class CommandConsumer implements MessageListener {
                     commandTypeName, rm.getCorrelationId(), e);
             sendFailedResult(rm, e.getMessage());
         } finally {
-            SalContext.clear();
+            if (!asyncDispatched) {
+                SalContext.clear();
+            }
+        }
+    }
+
+    /**
+     * Captures thread-bound context so it can be restored in an async callback
+     * thread. The original thread's ThreadLocals may be cleared by then.
+     */
+    private record ContextSnapshot(Map<String, Object> session,
+                                    CommandContext commandContext,
+                                    String correlationId) {
+        void restore() {
+            if (session != null) SalContext.setSession(session);
+            if (commandContext != null) SalContext.setCommandContext(commandContext);
+            SalContext.setCorrelationId(correlationId);
         }
     }
 

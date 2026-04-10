@@ -2,13 +2,11 @@ package ru.copperside.sal.starter.command;
 
 import org.junit.jupiter.api.Test;
 import ru.copperside.sal.api.command.CommandPriority;
-import ru.copperside.sal.api.exception.SalErrorCodes;
 import ru.copperside.sal.starter.context.SalContext;
 
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,8 +68,7 @@ class DefaultCommandBusTest {
     @Test
     void salContext_session_shouldBeThreadLocal() {
         SalContext.setSession(Map.of("SessionId", "test-123", "OperationId", 42));
-        assertThat(SalContext.sessionId()).isEqualTo("test-123");
-        assertThat(SalContext.operationId()).isEqualTo("42");
+        assertThat(SalContext.session()).containsEntry("SessionId", "test-123");
 
         SalContext.clear();
         assertThat(SalContext.session()).isNull();
@@ -91,9 +88,8 @@ class DefaultCommandBusTest {
 
     @Test
     void salContext_mdc_shouldSetAndClear() {
-        SalContext.setMdc("cid-1", "sid-1", "adapter-1");
+        SalContext.setCorrelationId("cid-1");
         assertThat(org.slf4j.MDC.get("correlationId")).isEqualTo("cid-1");
-        assertThat(org.slf4j.MDC.get("sessionId")).isEqualTo("sid-1");
 
         SalContext.clear();
         assertThat(org.slf4j.MDC.get("correlationId")).isNull();
