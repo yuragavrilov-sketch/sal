@@ -43,6 +43,12 @@ public class CommandPublisher {
 
     /**
      * Build and publish a command message.
+     * <p>
+     * {@code commandTypeName} may be either the bare C# FQN (used as the
+     * routing key) or the assembly-qualified form {@code "<FQN>, <Assembly>"}.
+     * In the latter case the FQN part is used as the routing key and the full
+     * string is preserved in {@code content_type} — that is what SAL C#
+     * consumers expect on the wire.
      *
      * @return correlationId
      */
@@ -53,15 +59,24 @@ public class CommandPublisher {
             correlationId = UUID.randomUUID().toString();
         }
 
-        RecordedMessage rm = buildMessage(command, commandTypeName, correlationId, priority, expireDate);
+        String routingKey = stripAssemblySuffix(commandTypeName);
+
+        RecordedMessage rm = buildMessage(command, commandTypeName, routingKey,
+                correlationId, priority, expireDate);
 
         salRabbitTemplate.convertAndSend(
                 SalRabbitConstants.COMMAND_EXCHANGE,
-                commandTypeName,
+                routingKey,
                 rm);
 
         log.debug("[SRC -> BUS] Command {} correlationId={}", commandTypeName, correlationId);
         return correlationId;
+    }
+
+    private static String stripAssemblySuffix(String typeName) {
+        if (typeName == null) return null;
+        int comma = typeName.indexOf(',');
+        return comma < 0 ? typeName : typeName.substring(0, comma).trim();
     }
 
     /**
@@ -74,15 +89,15 @@ public class CommandPublisher {
                 rm);
     }
 
-    private RecordedMessage buildMessage(Object command, String commandTypeName,
+    private RecordedMessage buildMessage(Object command, String commandTypeName, String routingKey,
                                          String correlationId, CommandPriority priority,
                                          Instant expireDate) {
         RecordedMessage rm = new RecordedMessage();
         rm.setCorrelationId(correlationId);
         rm.setPriority((byte) priority.getValue());
         rm.setPayload(command);
-        rm.setPayloadType(commandTypeName);
-        rm.setRoutingKey(commandTypeName);
+        rm.setPayloadType(commandTypeName); // full "<FQN>, <Assembly>" form if provided
+        rm.setRoutingKey(routingKey);
         rm.setExchangeName(SalRabbitConstants.COMMAND_EXCHANGE);
         rm.setTimeStamp(Instant.now());
         rm.setSourceServiceId(adapterFullName);
@@ -91,6 +106,7 @@ public class CommandPublisher {
 
         Map<String, String> additionalData = new HashMap<>();
         additionalData.put(MessageDataKeys.IS_COMMAND, "");
+        additionalData.put(MessageDataKeys.NO_CREATE_QUEUE, "");
 
         Map<String, Object> session = SalContext.session();
         if (session != null) {

@@ -10,6 +10,7 @@ public final class MessageDataKeys {
     private MessageDataKeys() {}
 
     public static final String IS_COMMAND = "IsCommand";
+    public static final String NO_CREATE_QUEUE = "NoCreateQueue";
     public static final String SESSION = "Session";
     public static final String SESSION_ID = "SessionId";
     public static final String OPERATION_ID = "OperationId";

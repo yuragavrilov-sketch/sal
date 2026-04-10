@@ -57,8 +57,9 @@ public class SalMessageConverter implements MessageConverter {
 
             // AMQP properties
             messageProperties.setContentType(rm.getPayloadType());
-            messageProperties.setContentEncoding("UTF-8");
             messageProperties.setDeliveryMode(MessageProperties.DEFAULT_DELIVERY_MODE); // persistent
+            // Some SAL C# consumers expect this header on every message
+            messageProperties.setHeader("Accept-Language", "ru-RU");
             messageProperties.setMessageId(String.valueOf(rm.getMessageId()));
             messageProperties.setCorrelationId(rm.getCorrelationId());
             messageProperties.setPriority(rm.getPriority() & 0xFF);
