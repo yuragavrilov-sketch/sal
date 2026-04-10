@@ -109,13 +109,19 @@ public class CommandPublisher {
         additionalData.put(MessageDataKeys.NO_CREATE_QUEUE, "");
 
         // C# SAL framework's SessionHelper.GetSID() dereferences Session unconditionally
-        // while building error DTOs — if Session is missing, an NPE inside the error
-        // handler swallows the real exception AND prevents FailedResult from being
-        // published. Always send at least a minimal synthetic session.
+        // while building error DTOs — if Session is missing or wrong-shaped, an NPE
+        // inside the error handler swallows the real exception AND prevents
+        // FailedResult from being published. Always send a synthetic session in the
+        // exact shape C# Newtonsoft.Json expects:
+        //   {"__type":"DictionaryData","sessionid":"...","operationid":N,"authid":N}
+        // __type is the polymorphic deserialization hint, keys are lowercase.
         Map<String, Object> session = SalContext.session();
         if (session == null || session.isEmpty()) {
-            session = new HashMap<>();
-            session.put("SessionId", correlationId);
+            session = new java.util.LinkedHashMap<>();
+            session.put("__type", "DictionaryData");
+            session.put("sessionid", adapterFullName);
+            session.put("operationid", 0);
+            session.put("authid", 0);
         }
         try {
             additionalData.put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
