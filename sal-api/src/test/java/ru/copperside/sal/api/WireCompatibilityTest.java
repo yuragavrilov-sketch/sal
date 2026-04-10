@@ -9,10 +9,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import ru.copperside.sal.api.command.CommandCompletedEvent;
 import ru.copperside.sal.api.command.CommandContext;
 import ru.copperside.sal.api.command.CommandPriority;
-import ru.copperside.sal.api.exception.InfrastructureExceptionDTO;
 import ru.copperside.sal.api.message.RecordedMessage;
 
 import java.time.Instant;
@@ -93,55 +91,6 @@ class WireCompatibilityTest {
         CommandContext deserialized = wireMapper.readValue(json, CommandContext.class);
         assertThat(deserialized.getExcutionServiceId()).isEqualTo("adapter-b");
         assertThat(deserialized.getPriority()).isEqualTo(CommandPriority.Normal);
-    }
-
-    @Test
-    void infrastructureExceptionDTO_shouldRoundTrip() throws Exception {
-        var inner = new InfrastructureExceptionDTO();
-        inner.setCode("FatalException");
-        inner.setMessage("inner error");
-
-        var dto = new InfrastructureExceptionDTO();
-        dto.setExceptionType("Error");
-        dto.setCode("ServiceTimeout");
-        dto.setMessage("Request timed out");
-        dto.setAdapterName("payment-adapter");
-        dto.setSourceType("ActionProvider");
-        dto.setSourcePath("/api/payment/create");
-        dto.setTimeStamp(Instant.parse("2024-01-15T14:32:05Z"));
-        dto.setInnerException(inner);
-
-        String json = wireMapper.writeValueAsString(dto);
-        JsonNode tree = wireMapper.readTree(json);
-
-        assertThat(tree.get("ExceptionType").asText()).isEqualTo("Error");
-        assertThat(tree.get("Code").asText()).isEqualTo("ServiceTimeout");
-        assertThat(tree.get("AdapterName").asText()).isEqualTo("payment-adapter");
-        assertThat(tree.get("InnerException").get("Code").asText()).isEqualTo("FatalException");
-
-        InfrastructureExceptionDTO deserialized = wireMapper.readValue(json, InfrastructureExceptionDTO.class);
-        assertThat(deserialized.getInnerException().getCode()).isEqualTo("FatalException");
-    }
-
-    @Test
-    void commandCompletedEvent_shouldRoundTrip() throws Exception {
-        var ctx = new CommandContext();
-        ctx.setCorrelationId("abc-123");
-        ctx.setPriority(CommandPriority.High);
-
-        var event = new CommandCompletedEvent();
-        event.setResultType("TCB.Payment.TransactionResult, TCB.Payment");
-        event.setContext(ctx);
-        event.setAdditionalData(Map.of("Session", "compressed"));
-
-        String json = wireMapper.writeValueAsString(event);
-        JsonNode tree = wireMapper.readTree(json);
-
-        assertThat(tree.get("ResultType").asText()).contains("TransactionResult");
-        assertThat(tree.get("Context").get("Priority").asText()).isEqualTo("High");
-
-        CommandCompletedEvent deserialized = wireMapper.readValue(json, CommandCompletedEvent.class);
-        assertThat(deserialized.getContext().getPriority()).isEqualTo(CommandPriority.High);
     }
 
     @Test

@@ -31,12 +31,6 @@ public final class SalRabbitConstants {
     /** Queue prefix for command handler queues: "Command_{TypeFullName}". */
     public static final String COMMAND_QUEUE_PREFIX = "Command_";
 
-    /** Queue suffix for event queues: "{ServiceName}_Event". */
-    public static final String EVENT_QUEUE_SUFFIX = "_Event";
-
-    /** Queue suffix for service event queues: "{ServiceName}_service". */
-    public static final String SERVICE_EVENT_QUEUE_SUFFIX = "_service";
-
     /** Queue suffix for command result queues: "{ServiceName}_CommandResult". */
     public static final String COMMAND_RESULT_QUEUE_SUFFIX = "_CommandResult";
 
