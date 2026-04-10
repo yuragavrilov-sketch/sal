@@ -108,13 +108,19 @@ public class CommandPublisher {
         additionalData.put(MessageDataKeys.IS_COMMAND, "");
         additionalData.put(MessageDataKeys.NO_CREATE_QUEUE, "");
 
+        // C# SAL framework's SessionHelper.GetSID() dereferences Session unconditionally
+        // while building error DTOs — if Session is missing, an NPE inside the error
+        // handler swallows the real exception AND prevents FailedResult from being
+        // published. Always send at least a minimal synthetic session.
         Map<String, Object> session = SalContext.session();
-        if (session != null) {
-            try {
-                additionalData.put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
-            } catch (IOException e) {
-                log.warn("Failed to serialize session for command {}", commandTypeName, e);
-            }
+        if (session == null || session.isEmpty()) {
+            session = new HashMap<>();
+            session.put("SessionId", correlationId);
+        }
+        try {
+            additionalData.put(MessageDataKeys.SESSION, sessionSerializer.serialize(session));
+        } catch (IOException e) {
+            log.warn("Failed to serialize session for command {}", commandTypeName, e);
         }
 
         rm.setAdditionalData(additionalData);
