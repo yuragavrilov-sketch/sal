@@ -1,0 +1,35 @@
+# =============================================================================
+# SAL Test Client — web UI for invoking commands on remote adapters
+# =============================================================================
+
+sal:
+  adapter:
+    name: ${SAL_ADAPTER_NAME:test-client}
+    type: ${SAL_ADAPTER_TYPE:TestClient}
+  service:
+    environment-key: ""
+    sal-version: 1
+  command:
+    threads: 2
+    result-threads: 4
+
+spring:
+  application:
+    name: ${sal.adapter.name}
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    virtual-host: ${RABBIT_VHOST:dev}
+    username: ${RABBIT_USERNAME:guest}
+    password: ${RABBIT_PASSWORD:guest}
+  lifecycle:
+    timeout-per-shutdown-phase: 5s
+
+server:
+  port: ${SERVER_PORT:8090}
+  shutdown: graceful
+
+logging:
+  level:
+    ru.copperside.sal: INFO
+    CommandBus: INFO

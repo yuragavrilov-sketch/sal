@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>SAL Test Client</title>
+    <style>
+        body {
+            font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            color: #222;
+        }
+        h1 { border-bottom: 2px solid #666; padding-bottom: 0.5rem; }
+        label { display: block; margin-top: 1rem; font-weight: 600; }
+        input, textarea, select, button {
+            width: 100%;
+            padding: 0.5rem;
+            margin-top: 0.25rem;
+            font-family: monospace;
+            font-size: 14px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        textarea { min-height: 120px; resize: vertical; }
+        button {
+            margin-top: 1rem;
+            background: #2b7;
+            color: #fff;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            padding: 0.75rem;
+        }
+        button:hover { background: #19a; }
+        button:disabled { background: #999; cursor: not-allowed; }
+        .row { display: flex; gap: 1rem; }
+        .row > div { flex: 1; }
+        pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .ok { border-left: 4px solid #2b7; }
+        .err { border-left: 4px solid #c33; }
+        .hint { color: #666; font-size: 13px; margin-top: 0.25rem; }
+    </style>
+</head>
+<body>
+<h1>SAL Test Client</h1>
+<p>Publishes commands to the connected RabbitMQ broker and waits for the result.
+    No Java classes of the target commands are required — the wire type name and a JSON payload are enough.</p>
+
+<label for="type">Command type (wire FQN)</label>
+<input id="type" type="text" value="ru.copperside.sal.example.EchoCommand"
+       placeholder="e.g. TCB.Payment.TransactionCommand">
+<div class="hint">The routing key the target adapter's Command_&lt;type&gt; queue is bound to.</div>
+
+<label for="payload">Payload (JSON object)</label>
+<textarea id="payload">{
+  "Payload": "hello from test client"
+}</textarea>
+<div class="hint">Field names should match the C# type (PascalCase by convention).</div>
+
+<div class="row">
+    <div>
+        <label for="timeout">Timeout (seconds)</label>
+        <input id="timeout" type="number" value="30" min="1" max="600">
+    </div>
+    <div>
+        <label for="priority">Priority</label>
+        <select id="priority">
+            <option>Idle</option>
+            <option>BelowNormal</option>
+            <option selected>Normal</option>
+            <option>AboveNormal</option>
+            <option>High</option>
+            <option>RealTime</option>
+        </select>
+    </div>
+</div>
+
+<button id="send" type="button">Invoke command</button>
+
+<h2>Result</h2>
+<pre id="result">—</pre>
+
+<script>
+    const btn = document.getElementById('send');
+    const resultEl = document.getElementById('result');
+
+    btn.addEventListener('click', async () => {
+        const type = document.getElementById('type').value.trim();
+        const rawPayload = document.getElementById('payload').value.trim();
+        const timeoutSeconds = parseInt(document.getElementById('timeout').value, 10);
+        const priority = document.getElementById('priority').value;
+
+        let payload;
+        try {
+            payload = rawPayload ? JSON.parse(rawPayload) : {};
+        } catch (e) {
+            resultEl.className = 'err';
+            resultEl.textContent = 'Invalid JSON in payload: ' + e.message;
+            return;
+        }
+
+        btn.disabled = true;
+        resultEl.className = '';
+        resultEl.textContent = 'Invoking...';
+
+        try {
+            const resp = await fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, payload, timeoutSeconds, priority })
+            });
+            const body = await resp.json();
+            resultEl.className = resp.ok ? 'ok' : 'err';
+            resultEl.textContent = JSON.stringify(body, null, 2);
+        } catch (e) {
+            resultEl.className = 'err';
+            resultEl.textContent = 'Network error: ' + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>

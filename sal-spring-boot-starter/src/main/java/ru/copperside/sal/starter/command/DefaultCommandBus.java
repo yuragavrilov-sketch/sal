@@ -37,24 +37,32 @@ public class DefaultCommandBus implements CommandBus {
     @SuppressWarnings("unchecked")
     public <R extends CommandResult> CompletableFuture<R> executeCommandAsync(
             HaveResult<R> command, int timeoutSeconds, CommandPriority priority) {
-
         String commandTypeName = resolveTypeName(command.getClass());
+        return dispatch(commandTypeName, command, timeoutSeconds, priority).thenApply(r -> (R) r);
+    }
+
+    @Override
+    public CompletableFuture<Object> executeCommandAsync(
+            String commandTypeName, Object payload, int timeoutSeconds, CommandPriority priority) {
+        return dispatch(commandTypeName, payload, timeoutSeconds, priority);
+    }
+
+    private CompletableFuture<Object> dispatch(String commandTypeName, Object payload,
+                                               int timeoutSeconds, CommandPriority priority) {
         String correlationId = java.util.UUID.randomUUID().toString();
         Instant expireDate = Instant.now().plusSeconds(timeoutSeconds);
 
-        // Register pending command
         CompletableFuture<Object> future = new CompletableFuture<>();
         pendingCommands.put(correlationId, new PendingCommand(correlationId, expireDate, future));
 
-        // Publish
         try {
-            publisher.publish(command, commandTypeName, correlationId, priority, expireDate);
+            publisher.publish(payload, commandTypeName, correlationId, priority, expireDate);
         } catch (Exception e) {
             pendingCommands.remove(correlationId);
             future.completeExceptionally(e);
         }
 
-        return future.thenApply(result -> (R) result);
+        return future;
     }
 
     /**

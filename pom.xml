@@ -23,6 +23,7 @@
         <module>sal-api</module>
         <module>sal-spring-boot-starter</module>
         <module>sal-example-adapter</module>
+        <module>sal-test-client</module>
     </modules>
 
     <properties>
@@ -41,11 +42,6 @@
             <dependency>
                 <groupId>ru.copperside</groupId>
                 <artifactId>sal-spring-boot-starter</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>ru.copperside</groupId>
-                <artifactId>sal-test</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

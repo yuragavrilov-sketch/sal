@@ -21,4 +21,14 @@ public interface CommandBus {
     default <R extends CommandResult> CompletableFuture<R> executeCommandAsync(HaveResult<R> command) {
         return executeCommandAsync(command, 120, CommandPriority.Normal);
     }
+
+    /**
+     * Generic request/reply: publish a command identified by its wire type name
+     * with an arbitrary payload (POJO, Map, or similar) and await a raw result.
+     * <p>
+     * Useful for tools that don't have the target command's Java class on the
+     * classpath — e.g. a test client poking unknown adapters.
+     */
+    CompletableFuture<Object> executeCommandAsync(String commandTypeName, Object payload,
+                                                   int timeoutSeconds, CommandPriority priority);
 }
