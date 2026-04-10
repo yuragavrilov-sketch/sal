@@ -7,12 +7,10 @@ public class SalProperties {
 
     private final Adapter adapter = new Adapter();
     private final Service service = new Service();
-    private final Client client = new Client();
     private final Command command = new Command();
 
     public Adapter getAdapter() { return adapter; }
     public Service getService() { return service; }
-    public Client getClient() { return client; }
     public Command getCommand() { return command; }
 
     public static class Adapter {
@@ -33,16 +31,6 @@ public class SalProperties {
         public void setEnvironmentKey(String environmentKey) { this.environmentKey = environmentKey; }
         public int getSalVersion() { return salVersion; }
         public void setSalVersion(int salVersion) { this.salVersion = salVersion; }
-    }
-
-    public static class Client {
-        private int requestTimeout = 120;
-        private int serviceRequestTimeout = 10;
-
-        public int getRequestTimeout() { return requestTimeout; }
-        public void setRequestTimeout(int requestTimeout) { this.requestTimeout = requestTimeout; }
-        public int getServiceRequestTimeout() { return serviceRequestTimeout; }
-        public void setServiceRequestTimeout(int serviceRequestTimeout) { this.serviceRequestTimeout = serviceRequestTimeout; }
     }
 
     public static class Command {
