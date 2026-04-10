@@ -22,12 +22,6 @@ public final class SalRabbitConstants {
     /** Dead letter queue. */
     public static final String DEAD_LETTER_QUEUE = "dead-letter-queue";
 
-    /** Rejected message exchange (Fanout). */
-    public static final String REJECTED_MESSAGE_EXCHANGE = "rejected-message-exchange";
-
-    /** Rejected message queue. */
-    public static final String REJECTED_MESSAGE_QUEUE = "rejected-message-queue";
-
     /** Queue prefix for command handler queues: "Command_{TypeFullName}". */
     public static final String COMMAND_QUEUE_PREFIX = "Command_";
 

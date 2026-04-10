@@ -1,4 +1,3 @@
-ru.copperside.sal.starter.SalAutoConfiguration
 ru.copperside.sal.starter.serialization.SalSerializationAutoConfiguration
 ru.copperside.sal.starter.rabbitmq.SalRabbitAutoConfiguration
 ru.copperside.sal.starter.command.CommandBusAutoConfiguration

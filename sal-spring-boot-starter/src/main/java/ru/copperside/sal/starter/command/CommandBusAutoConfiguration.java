@@ -4,6 +4,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -15,10 +16,11 @@ import ru.copperside.sal.starter.serialization.TypeMappingRegistry;
 import ru.copperside.sal.starter.session.SessionSerializer;
 
 /**
- * Auto-configuration for Command Bus components (Phase 3).
+ * Auto-configuration for Command Bus components.
  */
 @AutoConfiguration(after = SalRabbitAutoConfiguration.class)
 @ConditionalOnBean(SalRabbitAutoConfiguration.class)
+@EnableConfigurationProperties(SalProperties.class)
 @EnableScheduling
 public class CommandBusAutoConfiguration {
 
@@ -55,7 +57,8 @@ public class CommandBusAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AdapterLifecycle adapterLifecycle(SalProperties properties) {
-        return new AdapterLifecycle(properties);
+    public AdapterLifecycle adapterLifecycle(SalProperties properties,
+                                             CommandTimeoutWatcher timeoutWatcher) {
+        return new AdapterLifecycle(properties, timeoutWatcher);
     }
 }

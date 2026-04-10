@@ -18,10 +18,10 @@ import java.util.List;
 import static ru.copperside.sal.starter.rabbitmq.SalRabbitConstants.*;
 
 /**
- * Declares RabbitMQ infrastructure topology (ADR-004).
+ * Declares RabbitMQ infrastructure topology.
  * <p>
- * Creates dead-letter and rejected-message exchanges/queues.
- * Command and event queues are declared dynamically by CommandBus/EventBus.
+ * Creates dead-letter exchange/queue and command/result exchanges.
+ * Per-handler command queues are declared dynamically by CommandListenerRegistrar.
  */
 @Configuration
 @ConditionalOnBean(SalRabbitAutoConfiguration.class)
@@ -37,13 +37,6 @@ public class SalTopologyConfigurer {
         declarables.add(dlx);
         declarables.add(dlq);
         declarables.add(BindingBuilder.bind(dlq).to(dlx));
-
-        // Rejected message exchange + queue
-        var rmx = new FanoutExchange(REJECTED_MESSAGE_EXCHANGE, true, false);
-        var rmq = QueueBuilder.durable(REJECTED_MESSAGE_QUEUE).build();
-        declarables.add(rmx);
-        declarables.add(rmq);
-        declarables.add(BindingBuilder.bind(rmq).to(rmx));
 
         // Command exchange (Direct, durable)
         var cmdExchange = new DirectExchange(COMMAND_EXCHANGE, true, false);
